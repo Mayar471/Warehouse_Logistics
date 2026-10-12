@@ -39,7 +39,9 @@ export async function journal(
     | 'payout_receive_reverse'
     | 'remittance_return_release'
     | 'remittance_reverse'
-    | 'remittance_return_restore',
+    | 'remittance_return_restore'
+    | 'refund_release'
+    | 'refund_confirm',
   currency: string,
   amount: number,
   entries: { account: string; amount: number }[],
@@ -47,6 +49,7 @@ export async function journal(
   reversesJournalId: string | null = null,
   returnId: string | null = null,
   remittanceRound: number | null = null,
+  refundId: string | null = null,
 ) {
   assert(
     entries.every((e) => Number.isSafeInteger(e.amount) && e.amount !== 0) &&
@@ -57,8 +60,19 @@ export async function journal(
   );
   const journalId = randomUUID();
   await tx.query(
-    'INSERT INTO cash_journals(id,shipment_id,kind,currency,amount_minor,payout_id,reverses_journal_id,remittance_return_id,remittance_round) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-    [journalId, id, kind, currency, amount, payoutId, reversesJournalId, returnId, remittanceRound],
+    'INSERT INTO cash_journals(id,shipment_id,kind,currency,amount_minor,payout_id,reverses_journal_id,remittance_return_id,remittance_round,refund_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+    [
+      journalId,
+      id,
+      kind,
+      currency,
+      amount,
+      payoutId,
+      reversesJournalId,
+      returnId,
+      remittanceRound,
+      refundId,
+    ],
   );
   for (const e of entries)
     await tx.query(
@@ -91,6 +105,7 @@ export async function validateCash(tx: Transaction, id: string) {
       account_code: string;
       posting: number;
       payoutId: string | null;
+      refundId: string | null;
       journalId: string;
       reverses: string | null;
       returnId: string | null;
@@ -98,7 +113,7 @@ export async function validateCash(tx: Transaction, id: string) {
       sealed: boolean;
       currency: string;
     }>(
-      `SELECT j.id AS "journalId",j.reverses_journal_id AS reverses,j.remittance_return_id AS "returnId",j.remittance_round AS "remittanceRound",j.sealed,j.kind,j.currency,j.payout_id AS "payoutId",j.amount_minor::double precision AS amount,p.account_code,p.amount_minor::double precision AS posting FROM cash_journals j JOIN cash_postings p ON p.journal_id=j.id WHERE j.shipment_id=$1 ORDER BY j.kind,p.account_code`,
+      `SELECT j.id AS "journalId",j.reverses_journal_id AS reverses,j.remittance_return_id AS "returnId",j.remittance_round AS "remittanceRound",j.sealed,j.kind,j.currency,j.refund_id AS "refundId",j.payout_id AS "payoutId",j.amount_minor::double precision AS amount,p.account_code,p.amount_minor::double precision AS posting FROM cash_journals j JOIN cash_postings p ON p.journal_id=j.id WHERE j.shipment_id=$1 ORDER BY j.kind,p.account_code`,
       [id],
     )
   ).rows;
@@ -342,8 +357,55 @@ export async function validateCash(tx: Transaction, id: string) {
       'قيود صرف المستحقات لا تطابق حالة الصرف',
     );
   }
+  let expectedRefundPosts = 0;
+  const refunds = (
+    await tx.query<{ id: string; status: string; amount: number; currency: string }>(
+      'SELECT id,status,amount_minor::double precision AS amount,currency FROM customer_refunds WHERE shipment_id=$1',
+      [id],
+    )
+  ).rows;
+  for (const refund of refunds) {
+    assert(
+      refund.amount === row.goods_minor && refund.currency === row.currency,
+      409,
+      'CASH_INCONSISTENT',
+      'قيمة الرد لا تطابق البضائع المحصلة',
+    );
+    const ep: { kind: string; account: string; amount: number }[] = [];
+    if (['released', 'confirmed'].includes(refund.status))
+      ep.push(
+        { kind: 'refund_release', account: 'customer_refund_transit', amount: refund.amount },
+        { kind: 'refund_release', account: 'operations_cash', amount: -refund.amount },
+      );
+    if (refund.status === 'confirmed')
+      ep.push(
+        { kind: 'refund_confirm', account: 'merchant_payable', amount: refund.amount },
+        { kind: 'refund_confirm', account: 'customer_refund_transit', amount: -refund.amount },
+      );
+    const actual = posts.filter((p) => p.refundId === refund.id);
+    assert(
+      actual.length === ep.length &&
+        ep.every((e) =>
+          actual.some(
+            (p) =>
+              p.kind === e.kind &&
+              p.account_code === e.account &&
+              p.posting === e.amount &&
+              p.amount === refund.amount &&
+              p.currency === refund.currency &&
+              p.sealed &&
+              p.reverses === null,
+          ),
+        ),
+      409,
+      'CASH_INCONSISTENT',
+      'قيود رد العميل لا تطابق العهدة',
+    );
+    expectedRefundPosts += ep.length;
+  }
   assert(
-    posts.length === nonzero.length + expectedRemittancePosts + expectedPayoutPosts,
+    posts.length ===
+      nonzero.length + expectedRemittancePosts + expectedPayoutPosts + expectedRefundPosts,
     409,
     'CASH_INCONSISTENT',
     'يوجد قيد صرف غير مرتبط بمستحقاته',

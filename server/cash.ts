@@ -21,6 +21,8 @@ export function registerCash(
       const params = [a.role, a.merchantId, a.id, a.courierId, a.pickupSiteId];
       const totals = (
         await tx.query<{
+          refundedMinor: number;
+          refundInTransitMinor: number;
           total: number;
           returnIssueCount: number;
           pendingMinor: number;
@@ -29,7 +31,7 @@ export function registerCash(
           goodsLiabilityMinor: number;
           deliveryClearingMinor: number;
         }>(
-          `SELECT COUNT(*)::integer total,COALESCE(SUM((SELECT COUNT(*) FROM cash_remittance_returns r WHERE r.shipment_id=o.shipment_id AND r.issue_open)),0)::integer AS "returnIssueCount",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='pending' AND s.status NOT IN ('cancelled','returned','returning')),0)::double precision AS "pendingMinor",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='collected'),0)::double precision AS "heldMinor",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='received'),0)::double precision AS "receivedMinor",(COALESCE(SUM(o.goods_minor) FILTER(WHERE o.status IN ('collected','received')),0)-COALESCE(SUM((SELECT COALESCE(SUM(p.amount_minor),0) FROM cash_payouts p WHERE p.shipment_id=o.shipment_id AND p.status='received')),0))::double precision AS "goodsLiabilityMinor",COALESCE(SUM(o.fee_minor) FILTER(WHERE o.status IN ('collected','received')),0)::double precision AS "deliveryClearingMinor" FROM cash_obligations o JOIN shipments s ON s.id=o.shipment_id WHERE ${scope}`,
+          `SELECT COUNT(*)::integer total,COALESCE(SUM((SELECT COUNT(*) FROM cash_remittance_returns r WHERE r.shipment_id=o.shipment_id AND r.issue_open)),0)::integer AS "returnIssueCount",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='pending' AND s.status NOT IN ('cancelled','returned','returning')),0)::double precision AS "pendingMinor",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='collected'),0)::double precision AS "heldMinor",COALESCE(SUM(o.total_minor) FILTER(WHERE o.status='received'),0)::double precision AS "receivedMinor",(COALESCE(SUM(o.goods_minor) FILTER(WHERE o.status IN ('collected','received')),0)-COALESCE(SUM((SELECT COALESCE(SUM(p.amount_minor),0) FROM cash_payouts p WHERE p.shipment_id=o.shipment_id AND p.status='received')),0)-COALESCE(SUM((SELECT COALESCE(SUM(f.amount_minor),0) FROM customer_refunds f WHERE f.shipment_id=o.shipment_id AND f.status='confirmed')),0))::double precision AS "goodsLiabilityMinor",COALESCE(SUM((SELECT COALESCE(SUM(f.amount_minor),0) FROM customer_refunds f WHERE f.shipment_id=o.shipment_id AND f.status='confirmed')),0)::double precision AS "refundedMinor",COALESCE(SUM((SELECT COALESCE(SUM(f.amount_minor),0) FROM customer_refunds f WHERE f.shipment_id=o.shipment_id AND f.status='released')),0)::double precision AS "refundInTransitMinor",COALESCE(SUM(o.fee_minor) FILTER(WHERE o.status IN ('collected','received')),0)::double precision AS "deliveryClearingMinor" FROM cash_obligations o JOIN shipments s ON s.id=o.shipment_id WHERE ${scope}`,
           params,
         )
       ).rows[0];
@@ -41,6 +43,7 @@ export function registerCash(
       );
       const ledger = (
         await tx.query<{
+          ledgerRefundInTransitMinor: number;
           netRemittedMinor: number;
           remittanceReturnTransitMinor: number;
           operationsBalanceMinor: number;
@@ -50,7 +53,7 @@ export function registerCash(
           goodsLiabilityMinor: number;
           deliveryClearingMinor: number;
         }>(
-          `SELECT COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code LIKE 'holder:%'),0)::double precision AS "heldMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash' AND j.kind='remittance'),0)::double precision AS "receivedMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash' AND j.kind IN ('remittance','remittance_reverse')),0)::double precision AS "netRemittedMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='remittance_return_transit'),0)::double precision AS "remittanceReturnTransitMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash'),0)::double precision AS "operationsBalanceMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='payout_in_transit'),0)::double precision AS "payoutInTransitMinor",-COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='merchant_payable'),0)::double precision AS "goodsLiabilityMinor",-COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='delivery_clearing'),0)::double precision AS "deliveryClearingMinor" FROM cash_postings p JOIN cash_journals j ON j.id=p.journal_id JOIN cash_obligations o ON o.shipment_id=j.shipment_id JOIN shipments s ON s.id=o.shipment_id WHERE ${scope}`,
+          `SELECT COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code LIKE 'holder:%'),0)::double precision AS "heldMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash' AND j.kind='remittance'),0)::double precision AS "receivedMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash' AND j.kind IN ('remittance','remittance_reverse')),0)::double precision AS "netRemittedMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='remittance_return_transit'),0)::double precision AS "remittanceReturnTransitMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='operations_cash'),0)::double precision AS "operationsBalanceMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='customer_refund_transit'),0)::double precision AS "ledgerRefundInTransitMinor",COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='payout_in_transit'),0)::double precision AS "payoutInTransitMinor",-COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='merchant_payable'),0)::double precision AS "goodsLiabilityMinor",-COALESCE(SUM(p.amount_minor) FILTER(WHERE p.account_code='delivery_clearing'),0)::double precision AS "deliveryClearingMinor" FROM cash_postings p JOIN cash_journals j ON j.id=p.journal_id JOIN cash_obligations o ON o.shipment_id=j.shipment_id JOIN shipments s ON s.id=o.shipment_id WHERE ${scope}`,
           params,
         )
       ).rows[0];
@@ -60,9 +63,13 @@ export function registerCash(
         'CASH_RANGE',
         'إجمالي القيود خارج حدود الشريحة',
       );
-      const consistent = (
-        ['heldMinor', 'receivedMinor', 'goodsLiabilityMinor', 'deliveryClearingMinor'] as const
-      ).every((key) => totals[key] === ledger[key === 'receivedMinor' ? 'netRemittedMinor' : key]);
+      const consistent =
+        totals.refundInTransitMinor === ledger.ledgerRefundInTransitMinor &&
+        (
+          ['heldMinor', 'receivedMinor', 'goodsLiabilityMinor', 'deliveryClearingMinor'] as const
+        ).every(
+          (key) => totals[key] === ledger[key === 'receivedMinor' ? 'netRemittedMinor' : key],
+        );
       const rows = (
         await tx.query<CashRow>(
           select +
@@ -251,6 +258,17 @@ async function returnRemittance(
     409,
     'PAYOUT_BLOCKS_RETURN',
     'المبلغ مرتبط بصرف متجر؛ أنهِ الحجز أو أعد نقد الصرف أولًا',
+  );
+  assert(
+    !(
+      await tx.query(
+        "SELECT id FROM customer_refunds WHERE shipment_id=$1 AND status<>'cancelled'",
+        [r.shipmentId],
+      )
+    ).rows.length,
+    409,
+    'REFUND_BLOCKS_RETURN',
+    'يوجد رد عميل معتمد؛ لا يمكن إرجاع حوالة تمويله',
   );
   let c = (
     await tx.query<{

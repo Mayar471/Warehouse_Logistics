@@ -1,3 +1,4 @@
+import { RefundPanel } from './RefundPanel.js';
 import { useState, useRef, type FormEvent } from 'react';
 import type { StoreOrder } from '../shared/catalog.js';
 import { commercialReturnLabels } from '../shared/commercial-returns.js';
@@ -101,7 +102,7 @@ export function CustomerReturn({
       )}
       <p className="scope-note">
         يبقى الطلب الأصلي مسلّمًا. تأكيد تسليم المرتجع للمندوب لا يعني رد المال. بعد وصوله للمنشأ
-        تُعزل البضاعة للفحص؛ رد أموال العميل مرحلة لاحقة.
+        تُعزل البضاعة للفحص؛ اعتماد رد قيمة البضائع وتمويله وإقرار استلامه خطوات مستقلة تظهر أدناه.
       </p>
       {!target && r?.status === 'accepted' && (
         <button className="shop-primary" onClick={() => open('handover')}>
@@ -123,6 +124,7 @@ export function CustomerReturn({
           {error}
         </p>
       )}
+      {r && <RefundPanel r={r} onChanged={onChanged} />}
       {target && (
         <form onSubmit={(e) => void submit(e)}>
           {target.action === 'handover' && (

@@ -37,7 +37,9 @@ async function post(path: string, payload: Record<string, unknown>, who: string)
 }
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const errors: string[] = [];
-let loseReturnReceipt = false;
+let loseReturnReceipt = false,
+  loseRefundRelease = false,
+  loseRefundConfirm = false;
 async function page(who?: string) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   if (who) {
@@ -60,6 +62,23 @@ async function page(who?: string) {
         status: 500,
         contentType: 'application/json',
         body: JSON.stringify({ message: 'رد اختبار مفقود بعد الحفظ' }),
+      });
+    } else if (
+      (loseRefundRelease &&
+        req.method() === 'POST' &&
+        req.url().includes('/api/refunds/') &&
+        req.postDataJSON()?.action === 'release') ||
+      (loseRefundConfirm &&
+        req.method() === 'POST' &&
+        req.url().endsWith('/refund') &&
+        req.postDataJSON()?.action === 'confirm')
+    ) {
+      if (req.url().endsWith('/refund')) loseRefundConfirm = false;
+      else loseRefundRelease = false;
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'رد اختبار مالي مفقود بعد الحفظ' }),
       });
     } else await route.fulfill({ response });
   });
@@ -246,9 +265,102 @@ try {
     )
   ).rows[0];
   assert.equal(stock.quarantine, 1);
+  const detail = (
+    await app.inject({ url: `/api/shipments/${shipment.id}`, headers: { cookie: cookies.ops } })
+  ).json();
+  await post(
+    `/api/inventory/returns/${shipment.id}/inspect`,
+    {
+      expectedVersion: detail.shipment.version,
+      items: [{ productId: 'bag', restock: 1, discard: 0 }],
+      reason: 'فحص فعلي لمنتج الإرجاع واستعادته للبيع',
+    },
+    'merchant-a',
+  );
+  const cash = (await app.inject({ url: '/api/cash', headers: { cookie: cookies.ops } }))
+    .json()
+    .rows.find((r: { shipmentId: string }) => r.shipmentId === shipment.id);
+  await post(
+    `/api/cash/${shipment.id}/actions`,
+    {
+      action: 'receive',
+      expectedVersion: cash.version,
+      amountMinor: cash.totalMinor,
+      currency: 'SYP',
+      reference: 'استلام نقد 123',
+      reason: 'استلام كامل نقد التحصيل في العمليات',
+    },
+    'ops',
+  );
+  const refundAmount = String(shipment.collection.goodsMinor / 100);
+  async function fillRefund(p: typeof merchant) {
+    const panel = p.getByLabel('رد أموال العميل');
+    await panel.getByLabel('مبلغ رد العميل').fill(refundAmount);
+    await panel.getByLabel('مرجع إقرار رد العميل').fill('إيصال رد 123');
+    await panel.getByLabel('سبب إقرار رد العميل').fill('إقرار فعلي برد قيمة البضائع كاملة');
+    await panel.getByLabel('راجعت المبلغ وأؤكد إقرار رد العميل باسم حسابي.').check();
+  }
+  await merchant.getByRole('button', { name: 'اعتماد رد قيمة البضائع', exact: true }).click();
+  await fillRefund(merchant);
+  await merchant.getByRole('button', { name: 'تأكيد إقرار رد العميل', exact: true }).click();
+  await observer
+    .getByRole('button', { name: 'حجز تمويل رد العميل', exact: true })
+    .waitFor({ timeout: 15000 });
+  await observer.getByRole('button', { name: 'حجز تمويل رد العميل', exact: true }).click();
+  await fillRefund(observer);
+  await observer.getByRole('button', { name: 'تأكيد إقرار رد العميل', exact: true }).click();
+  await observer.getByRole('button', { name: 'تسجيل تسليم النقد للعميل', exact: true }).waitFor();
+  loseRefundRelease = true;
+  await observer.getByRole('button', { name: 'تسجيل تسليم النقد للعميل', exact: true }).click();
+  await fillRefund(observer);
+  await observer.getByRole('button', { name: 'تأكيد إقرار رد العميل', exact: true }).click();
+  await observer.getByRole('button', { name: 'فحص نتيجة الحفظ', exact: true }).waitFor();
+  await observer.reload();
+  await observer.getByRole('button', { name: 'متابعة الإقرار المالي', exact: true }).click();
+  await observer.getByRole('button', { name: 'فحص نتيجة الحفظ', exact: true }).click();
+  await observer
+    .getByRole('button', { name: 'فحص نتيجة الحفظ', exact: true })
+    .waitFor({ state: 'detached' });
+  await customer
+    .getByRole('button', { name: 'تأكيد استلام مبلغ الرد', exact: true })
+    .waitFor({ timeout: 15000 });
+  await customer.getByRole('button', { name: 'تأكيد استلام مبلغ الرد', exact: true }).click();
+  await fillRefund(customer);
+  for (const width of [1440, 390, 360]) {
+    await customer.setViewportSize({ width, height: 1000 });
+    assert.ok(await customer.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await customer.screenshot({
+      path: `artifacts/screenshots/customer-refund-${width}.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
+  loseRefundConfirm = true;
+  await customer.getByRole('button', { name: 'تأكيد إقرار رد العميل', exact: true }).click();
+  await customer
+    .getByLabel('رد أموال العميل')
+    .getByRole('alert')
+    .getByText(/لم نتأكد من نتيجة الحفظ/)
+    .waitFor();
+  assert.equal(await customer.getByLabel('مبلغ رد العميل').isDisabled(), true);
+  await customer.getByRole('button', { name: 'تأكيد إقرار رد العميل', exact: true }).click();
+
+  await customer.getByText('أكد العميل استلام كامل الرد', { exact: true }).waitFor();
+  const finalCash = (
+    await app.inject({ url: '/api/cash', headers: { cookie: cookies.ops } })
+  ).json();
+  assert.equal(finalCash.consistent, true);
+  assert.equal(finalCash.refundedMinor, shipment.collection.goodsMinor);
+  assert.equal(finalCash.refundInTransitMinor, 0);
+  assert.equal(loseRefundRelease, false);
+  assert.equal(loseRefundConfirm, false);
+  assert.equal(
+    (await db.query('SELECT * FROM cash_journals WHERE refund_id IS NOT NULL')).rows.length,
+    2,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: pickup COD confirmation guidance, Arabic digits, review reset, live route/timeline and customer progress, responsive 1440/390/360; commercial reverse transport and isolated stock receipt.',
+    'PASS: pickup COD confirmation guidance, Arabic digits, review reset, live route/timeline and customer progress, responsive 1440/390/360; commercial reverse transport, stock receipt and independently confirmed customer refund.',
   );
 } finally {
   await browser.close();

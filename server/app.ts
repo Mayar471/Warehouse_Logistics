@@ -1,3 +1,4 @@
+import { registerRefunds } from './customer-refunds.js';
 import { registerCommercialReturns, expireCommercialReturns } from './commercial-returns.js';
 import { registerFinancialRecovery } from './financial-recovery.js';
 import Fastify from 'fastify';
@@ -261,6 +262,7 @@ export function buildApp(
   registerFinancialRecovery(app, write, account);
   registerCommercialReturns(app, write, account, clock);
   registerPayouts(app, write, account, clock);
+  registerRefunds(app, write, account, clock);
   registerInventory(app, db, write, account);
   registerTransfers(app, db, write, account, clock);
   registerRecovery(app, db, write, operator);

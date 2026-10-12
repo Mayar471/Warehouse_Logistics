@@ -1,3 +1,4 @@
+import { restoreCashSchema19 } from './helpers/cash-returns.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -37,6 +38,7 @@ test('schema 18 approved return survives migration and restart without new stock
     assert.equal(approve.statusCode, 200, approve.body);
     const stock = await f.stock(),
       cash = (await f.view()).json();
+    await restoreCashSchema19(f.db);
     await f.db.exec(`
       ALTER TABLE commercial_returns DROP CONSTRAINT commercial_return_status;
       ALTER TABLE commercial_returns DROP CONSTRAINT commercial_return_review;

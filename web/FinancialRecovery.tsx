@@ -37,7 +37,7 @@ export function FinancialNotice({
   onOpen,
 }: {
   actorId: string;
-  onOpen: (nav: 'cash' | 'payouts') => void;
+  onOpen: (nav: 'cash' | 'payouts' | 'returns') => void;
 }) {
   const recovery = useFinancialRecovery(actorId);
   if (!recovery.blocked) return null;
@@ -47,7 +47,13 @@ export function FinancialNotice({
       <button
         className="button secondary"
         onClick={() =>
-          onOpen(recovery.command?.url.startsWith('/api/payouts') ? 'payouts' : 'cash')
+          onOpen(
+            recovery.command?.url.startsWith('/api/payouts')
+              ? 'payouts'
+              : recovery.command?.url.startsWith('/api/refunds')
+                ? 'returns'
+                : 'cash',
+          )
         }
       >
         متابعة الإقرار المالي

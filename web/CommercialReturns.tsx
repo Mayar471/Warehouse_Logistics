@@ -1,3 +1,5 @@
+import { RefundPanel } from './RefundPanel.js';
+import { FinancialRecovery, useFinancialRecovery } from './FinancialRecovery.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Account, Courier } from '../shared/contracts.js';
 import type { CommercialReturn, CommercialReturnView } from '../shared/commercial-returns.js';
@@ -76,6 +78,7 @@ export function CommercialReturns({
       clearInterval(timer);
     };
   }, [target, busy, uncertain]);
+  const recovery = useFinancialRecovery(account.id);
   const locked = busy || uncertain;
   function open(row: CommercialReturn, action: ReturnAction) {
     setTarget({ row, action });
@@ -137,13 +140,27 @@ export function CommercialReturns({
   }
   return (
     <div className="inventory-view">
+      <FinancialRecovery
+        command={recovery.command}
+        error={recovery.error}
+        onDone={async () => {
+          recovery.refresh();
+          await load();
+        }}
+        onRefresh={recovery.refresh}
+        onRejected={async (message) => {
+          setError(message);
+          recovery.refresh();
+          await load();
+        }}
+      />
       <section className="inventory-intro">
         <div>
           <span className="eyebrow">إرجاع موثّق من العميل حتى منشأ الطلب</span>
           <h2>مرتجعات العملاء</h2>
           <p>
             تابع القرار وإسناد الاستلام والعهدة حتى وصول البضاعة للمنشأ. تُعزل الكميات المستلمة
-            للفحص قبل إتاحتها للبيع. رد نقد العميل مرحلة مستقلة لم تُنفذ بعد.
+            للفحص قبل إتاحتها للبيع. رد نقد العميل يتطلب اعتمادًا وتمويلًا وإقرار استلام مستقلًا.
           </p>
         </div>
       </section>
@@ -334,9 +351,18 @@ export function CommercialReturns({
             )}
             {r.status === 'received' && (
               <p className="scope-note">
-                استُلمت الكميات وعُزلت للفحص في شاشة المخزون. لم يُسجّل رد نقد العميل.
+                استُلمت الكميات؛ نتيجة الفحص وحالة رد المال موضحتان أدناه.
               </p>
             )}
+            <RefundPanel
+              r={r}
+              account={account}
+              disabled={!!recovery.command || !!recovery.error || locked}
+              onChanged={async () => {
+                recovery.refresh();
+                await load();
+              }}
+            />
             <div className="button-row">
               {(account.role === 'operator'
                 ? r.status === 'approved'
@@ -422,6 +448,12 @@ export function CommercialReturns({
                           receive: 'استلام المنشأ والعزل',
                           report: 'بلاغ تعثر',
                           assignment_expired: 'انتهاء مهلة القبول',
+                          'refund.request': 'اعتماد رد البضائع',
+                          'refund.reserve': 'حجز تمويل العميل',
+                          'refund.release': 'خروج نقد العميل',
+                          'refund.confirm': 'إقرار العميل استلام الرد',
+                          'refund.report': 'فرق في رد العميل',
+                          'refund.cancel': 'إلغاء قرار الرد',
                         } as Record<string, string>
                       )[e.action]
                     }{' '}

@@ -149,6 +149,8 @@ export function Cash({ account }: { account: Account }) {
         ['صافي الحوالات بعد الرجوع', view.netRemittedMinor],
         ['نقد رجوع بانتظار المحصل', view.remittanceReturnTransitMinor],
         ['نقد متبقٍ لدى العمليات', view.operationsBalanceMinor],
+        ['عهدة رد أموال العملاء', view.refundInTransitMinor],
+        ['ردود أكد العملاء استلامها', view.refundedMinor],
         ['خرج للصرف بانتظار المتجر', view.payoutInTransitMinor],
         ['قيمة بضائع مستحقة للمتاجر', view.goodsLiabilityMinor],
         ['رسوم توصيل بانتظار التوزيع', view.deliveryClearingMinor],

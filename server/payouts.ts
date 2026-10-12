@@ -56,7 +56,7 @@ export function registerPayouts(
     return write(async (tx) => {
       const owner = a.role === 'operator' ? null : a.merchantId;
       const scope = '($1::text IS NULL OR s.merchant_id=$1)';
-      const eligibleSql = `FROM cash_obligations o JOIN shipments s ON s.id=o.shipment_id JOIN merchants m ON m.id=s.merchant_id WHERE ${scope} AND o.status='received' AND NOT o.issue_open AND NOT EXISTS(SELECT 1 FROM cash_remittance_returns r WHERE r.shipment_id=o.shipment_id AND r.status IN ('requested','released')) AND NOT EXISTS(SELECT 1 FROM cash_payouts p WHERE p.shipment_id=o.shipment_id AND p.status NOT IN ('cancelled','returned','recovered'))`;
+      const eligibleSql = `FROM cash_obligations o JOIN shipments s ON s.id=o.shipment_id JOIN merchants m ON m.id=s.merchant_id WHERE ${scope} AND o.status='received' AND NOT EXISTS(SELECT 1 FROM customer_refunds f WHERE f.shipment_id=o.shipment_id AND f.status<>'cancelled') AND NOT o.issue_open AND NOT EXISTS(SELECT 1 FROM cash_remittance_returns r WHERE r.shipment_id=o.shipment_id AND r.status IN ('requested','released')) AND NOT EXISTS(SELECT 1 FROM cash_payouts p WHERE p.shipment_id=o.shipment_id AND p.status NOT IN ('cancelled','returned','recovered'))`;
       const available = (
         await tx.query<{ value: number }>(
           `SELECT COALESCE(SUM(o.goods_minor),0)::double precision AS value ${eligibleSql}`,
@@ -158,6 +158,17 @@ export function registerPayouts(
           'الصرف من نقد استلمته العمليات كاملًا دون فرق مفتوح فقط',
         );
         await validateCash(tx, b.shipmentId);
+        assert(
+          !(
+            await tx.query(
+              "SELECT id FROM customer_refunds WHERE shipment_id=$1 AND status<>'cancelled'",
+              [b.shipmentId],
+            )
+          ).rows.length,
+          409,
+          'REFUND_BLOCKS_PAYOUT',
+          'يوجد رد عميل معتمد؛ لا يمكن صرف مستحق الطلب للمتجر',
+        );
         assert(
           !(
             await tx.query(

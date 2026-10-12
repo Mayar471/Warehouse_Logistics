@@ -1,4 +1,6 @@
 export interface CommercialReturn {
+  refund: CustomerRefund | null;
+  inspectionComplete: boolean;
   id: string;
   shipmentId: string;
   shipmentReference: string;
@@ -62,4 +64,23 @@ export const commercialReturnLabels = {
   received: 'وصل للمنشأ — البضاعة في مسار الفحص',
   rejected: 'لم يقبل المتجر طلب الإرجاع',
   cancelled: 'سُحب طلب الإرجاع',
+};
+
+export interface CustomerRefund {
+  lastReportedMinor: number | null;
+  id: string;
+  status: 'requested' | 'reserved' | 'released' | 'confirmed' | 'cancelled';
+  version: number;
+  amountMinor: number;
+  currency: 'SYP';
+  issueOpen: boolean;
+  releasedAt: string | null;
+  confirmedAt: string | null;
+}
+export const refundLabels = {
+  requested: 'اعتمد المتجر رد قيمة البضائع',
+  reserved: 'حُجز التمويل — بانتظار تسليم النقد',
+  released: 'خرج النقد — بانتظار تأكيد العميل',
+  confirmed: 'أكد العميل استلام كامل الرد',
+  cancelled: 'أُلغي قرار الرد قبل خروج النقد',
 };

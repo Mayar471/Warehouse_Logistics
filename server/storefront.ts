@@ -1,3 +1,4 @@
+import { registerCustomerRefunds } from './customer-refunds.js';
 import { commercialReturnSelect, returnEvent } from './commercial-returns.js';
 import type { CommercialReturn } from '../shared/commercial-returns.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -47,6 +48,7 @@ export function registerStorefront(
     );
     return createHash('sha256').update(token).digest('hex');
   }
+  registerCustomerRefunds(app, write, owner, options.clock ?? Date.now);
   app.post('/api/storefront/session', async (req, reply) => {
     guard(req);
     if (!req.cookies.shop || !/^[a-f0-9]{64}$/.test(req.cookies.shop))
@@ -175,33 +177,35 @@ export function registerStorefront(
   });
   app.get('/api/storefront/orders', async (req) => {
     const ownerHash = owner(req);
-    const result = await db.query<{
-      id: string;
-      shipment_id: string;
-      items: StoreCheckout['items'];
-      subtotal_minor: number;
-    }>(
-      'SELECT * FROM storefront_checkouts WHERE owner_hash=$1 AND shipment_id IS NOT NULL ORDER BY created_at DESC LIMIT 50',
-      [ownerHash],
-    );
-    const cases = (
-      await db.query<CommercialReturn>(
-        commercialReturnSelect + ' WHERE r.shipment_id=ANY($1::uuid[])',
-        [result.rows.map((row) => row.shipment_id)],
-      )
-    ).rows;
-    const byShipment = new Map(cases.map((r) => [r.shipmentId, r]));
-    return {
-      orders: await Promise.all(
-        result.rows.map(async (row) => ({
-          commercialReturn: byShipment.get(row.shipment_id) ?? null,
-          checkoutId: row.id,
-          items: row.items,
-          subtotalMinor: row.subtotal_minor,
-          shipment: await mapShipment(db, await loadShipment(db, row.shipment_id)),
-        })),
-      ),
-    };
+    return write(async (tx) => {
+      const result = await tx.query<{
+        id: string;
+        shipment_id: string;
+        items: StoreCheckout['items'];
+        subtotal_minor: number;
+      }>(
+        'SELECT * FROM storefront_checkouts WHERE owner_hash=$1 AND shipment_id IS NOT NULL ORDER BY created_at DESC LIMIT 50',
+        [ownerHash],
+      );
+      const cases = (
+        await tx.query<CommercialReturn>(
+          commercialReturnSelect + ' WHERE r.shipment_id=ANY($1::uuid[])',
+          [result.rows.map((row) => row.shipment_id)],
+        )
+      ).rows;
+      const byShipment = new Map(cases.map((r) => [r.shipmentId, r]));
+      return {
+        orders: await Promise.all(
+          result.rows.map(async (row) => ({
+            commercialReturn: byShipment.get(row.shipment_id) ?? null,
+            checkoutId: row.id,
+            items: row.items,
+            subtotalMinor: row.subtotal_minor,
+            shipment: await mapShipment(tx, await loadShipment(tx, row.shipment_id)),
+          })),
+        ),
+      };
+    });
   });
   app.post('/api/storefront/orders/:id/returns', async (req) => {
     const ownerHash = owner(req),

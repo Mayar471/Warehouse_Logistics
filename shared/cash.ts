@@ -43,6 +43,8 @@ export interface CashRow extends Collection {
   receivedAt: string | null;
 }
 export interface CashView {
+  refundedMinor: number;
+  refundInTransitMinor: number;
   returnIssueCount: number;
   netRemittedMinor: number;
   remittanceReturnTransitMinor: number;

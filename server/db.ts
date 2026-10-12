@@ -430,6 +430,24 @@ export async function openDatabase(path?: string) {
       END $f$;
       INSERT INTO schema_migrations(version) VALUES(19);
     END IF; END $$;
+    DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=20) THEN
+      CREATE UNIQUE INDEX commercial_refund_source_pair ON commercial_returns(id,shipment_id);
+      CREATE TABLE customer_refunds(id uuid PRIMARY KEY REFERENCES commercial_returns(id),shipment_id uuid NOT NULL UNIQUE REFERENCES cash_obligations(shipment_id),amount_minor bigint NOT NULL CHECK(amount_minor>0 AND amount_minor<=1000000000000),currency text NOT NULL CHECK(currency='SYP'),status text NOT NULL CHECK(status IN ('requested','reserved','released','confirmed','cancelled')),last_reported_minor bigint CHECK(last_reported_minor>=0 AND last_reported_minor<=1000000000000 AND last_reported_minor<>amount_minor),version integer NOT NULL DEFAULT 1 CHECK(version>0),issue_open boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now(),released_at timestamptz,confirmed_at timestamptz,CHECK(NOT issue_open OR (status='released' AND last_reported_minor IS NOT NULL)),UNIQUE(id,shipment_id),FOREIGN KEY(id,shipment_id) REFERENCES commercial_returns(id,shipment_id),CHECK((status IN ('requested','reserved','cancelled') AND released_at IS NULL AND confirmed_at IS NULL AND NOT issue_open) OR (status='released' AND released_at IS NOT NULL AND confirmed_at IS NULL) OR (status='confirmed' AND released_at IS NOT NULL AND confirmed_at IS NOT NULL AND NOT issue_open)));
+      CREATE TABLE customer_refund_events(id uuid PRIMARY KEY,refund_id uuid NOT NULL REFERENCES customer_refunds(id),action text NOT NULL,actor_id text NOT NULL,actor_name text NOT NULL,reference text NOT NULL,reason text NOT NULL,details jsonb NOT NULL DEFAULT '{}',created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TRIGGER refund_event_immutable BEFORE UPDATE OR DELETE ON customer_refund_events FOR EACH ROW EXECUTE FUNCTION immutable_cash_entry();
+      CREATE FUNCTION guard_customer_refund() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN
+        IF TG_OP='DELETE' OR (to_jsonb(OLD)-ARRAY['status','version','issue_open','released_at','confirmed_at','last_reported_minor'])<>(to_jsonb(NEW)-ARRAY['status','version','issue_open','released_at','confirmed_at','last_reported_minor']) OR NEW.version<>OLD.version+1 OR NOT((OLD.status='requested' AND NEW.status IN ('reserved','cancelled')) OR (OLD.status='reserved' AND NEW.status IN ('released','cancelled')) OR (OLD.status='released' AND NEW.status IN ('released','confirmed'))) OR (OLD.released_at IS NOT NULL AND OLD.released_at IS DISTINCT FROM NEW.released_at) THEN RAISE EXCEPTION 'Customer refund history protected' USING ERRCODE='23514'; END IF;RETURN NEW;
+      END $f$;
+      CREATE TRIGGER refund_guard BEFORE UPDATE OR DELETE ON customer_refunds FOR EACH ROW EXECUTE FUNCTION guard_customer_refund();
+      ALTER TABLE cash_journals ADD COLUMN refund_id uuid;
+      ALTER TABLE cash_journals ADD CONSTRAINT journal_refund_shipment FOREIGN KEY(refund_id,shipment_id) REFERENCES customer_refunds(id,shipment_id);
+      ALTER TABLE cash_journals DROP CONSTRAINT cash_journals_kind_check;
+      ALTER TABLE cash_journals ADD CONSTRAINT cash_journals_kind_check CHECK(kind IN ('collection','remittance','payout_release','payout_receive','payout_return','payout_receive_reverse','remittance_return_release','remittance_reverse','remittance_return_restore','refund_release','refund_confirm'));
+      ALTER TABLE cash_journals DROP CONSTRAINT cash_journal_purpose;
+      ALTER TABLE cash_journals ADD CONSTRAINT cash_journal_purpose CHECK((kind IN ('collection','remittance') AND payout_id IS NULL AND remittance_return_id IS NULL AND refund_id IS NULL) OR (kind IN ('payout_release','payout_receive','payout_return','payout_receive_reverse') AND payout_id IS NOT NULL AND remittance_return_id IS NULL AND refund_id IS NULL) OR (kind IN ('remittance_return_release','remittance_reverse','remittance_return_restore') AND payout_id IS NULL AND remittance_return_id IS NOT NULL AND refund_id IS NULL) OR (kind IN ('refund_release','refund_confirm') AND payout_id IS NULL AND remittance_return_id IS NULL AND refund_id IS NOT NULL));
+      CREATE UNIQUE INDEX customer_refund_journal ON cash_journals(refund_id,kind) WHERE refund_id IS NOT NULL;
+      INSERT INTO schema_migrations(version) VALUES(20);
+    END IF; END $$;
     CREATE TABLE IF NOT EXISTS delivery_proofs (shipment_id uuid PRIMARY KEY REFERENCES shipments(id),code_hash text NOT NULL,expires_at timestamptz NOT NULL,issued_at timestamptz NOT NULL,attempts integer NOT NULL DEFAULT 0,consumed_at timestamptz);
     CREATE TABLE IF NOT EXISTS demo_settings (id integer PRIMARY KEY CHECK(id=1), webhook_paused boolean NOT NULL DEFAULT false);
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;

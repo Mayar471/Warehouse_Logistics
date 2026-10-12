@@ -55,16 +55,22 @@ export function financialPayload(url: string, body: string): Record<string, unkn
       throw new Error('INVALID_FINANCIAL_COMMAND');
     allowed = ['shipmentId', 'expectedCollectionVersion', 'reference', 'reason'];
   } else {
-    const match = /^\/api\/(cash|payouts)\/([^/]+)\/actions$/.exec(url);
+    const match = /^\/api\/(cash|payouts|refunds)\/([^/]+)\/actions$/.exec(url);
     if (
       !match ||
       !uuid.test(match[2]) ||
       !positive(p.expectedVersion) ||
       typeof p.action !== 'string' ||
-      !(match[1] === 'cash' ? cashActions : payoutActions).has(p.action)
+      !(
+        match[1] === 'cash'
+          ? cashActions
+          : match[1] === 'refunds'
+            ? new Set(['request', 'reserve', 'release', 'cancel'])
+            : payoutActions
+      ).has(p.action)
     )
       throw new Error('INVALID_FINANCIAL_COMMAND');
-    const amount = match[1] === 'cash' || p.action !== 'cancel';
+    const amount = match[1] !== 'payouts' || p.action !== 'cancel';
     allowed = [
       'action',
       'expectedVersion',
@@ -88,9 +94,9 @@ export function financialPayload(url: string, body: string): Record<string, unkn
 }
 export function financialScope(actorId: string, url: string) {
   if (url === '/api/payouts') return `${actorId}:payout:create`;
-  const match = /^\/api\/(cash|payouts)\/([^/]+)\/actions$/.exec(url);
+  const match = /^\/api\/(cash|payouts|refunds)\/([^/]+)\/actions$/.exec(url);
   if (!match || !uuid.test(match[2])) throw new Error('INVALID_FINANCIAL_COMMAND');
-  return `${actorId}:${match[1] === 'cash' ? 'cash' : 'payout'}:${match[2]}`;
+  return `${actorId}:${match[1] === 'cash' ? 'cash' : match[1] === 'refunds' ? 'refund' : 'payout'}:${match[2]}`;
 }
 export function decodeFinancialCommand(raw: string, actorId: string): FinancialCommand {
   if (raw.length > 8000) throw new Error('INVALID_FINANCIAL_COMMAND');

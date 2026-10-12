@@ -1,3 +1,4 @@
+import { refundJson } from './customer-refunds.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Transaction } from './db.js';
 import type { Account } from '../shared/contracts.js';
@@ -13,7 +14,7 @@ import {
   loadShipment,
   appendEvent,
 } from './domain.js';
-export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
+export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen",${refundJson} AS refund,(r.status='received' AND EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id) AND NOT EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id AND i.quantity<>i.restocked_quantity+i.discarded_quantity)) AS "inspectionComplete" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
 export async function returnEvent(
   tx: Transaction,
   id: string,
@@ -66,7 +67,10 @@ export function registerCommercialReturns(
       ).rows;
       const history = (
         await tx.query(
-          'SELECT e.id,e.return_id AS "returnId",e.action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM commercial_return_events e JOIN commercial_returns r ON r.id=e.return_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2) ORDER BY e.created_at DESC,e.id LIMIT 30',
+          `SELECT * FROM (
+          SELECT e.id,e.return_id AS "returnId",e.action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM commercial_return_events e JOIN commercial_returns r ON r.id=e.return_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2)
+          UNION ALL SELECT e.id,e.refund_id AS "returnId",'refund.'||e.action AS action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM customer_refund_events e JOIN commercial_returns r ON r.id=e.refund_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND $2::text IS NULL
+          ) h ORDER BY "createdAt" DESC,id LIMIT 30`,
           [owner, courier],
         )
       ).rows;
