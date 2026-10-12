@@ -1,0 +1,8 @@
+node_modules
+dist
+.local
+.npm-cache
+package-lock.json
+artifacts
+tmp
+docs/reference
