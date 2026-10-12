@@ -56,7 +56,7 @@ An alternative journey delivers the parcel to a pickup point. Arrival and the po
 | SMS, push, background notifications | Not implemented | In-app refresh only initially |
 | Owned-site complete-basket fulfillment-origin selection | Implemented locally | Use server-selected origin |
 | Shared warehouses | Not implemented | Separate ownership and commercial prerequisites |
-| Commercial return requests and merchant review | Implemented locally | Approval does not prove receipt or refund |
+| Commercial returns: review, local reverse transport and quarantine receipt/inspection | Implemented locally | Independent custody confirmations; approval and receipt do not prove customer refund |
 
 Older architecture and slice documents describe earlier stages. Where they differ, inspect current source and feature tests, then consult `docs/IMPLEMENTATION-STATUS.md` and the later feature documents. Do not copy outdated “not implemented” statements without checking current code.
 
@@ -395,7 +395,7 @@ Keep HTTP and business orchestration out of presentational widgets.
 Keep production application keys out of the mobile client.
 Never read or print .local/secrets.json or session cookies.
 Never bypass localhost, Host, Origin, identity, or role checks to make a demo work.
-Use the existing GPS and COD contracts when those milestones are selected. Do not invent push, optimization, intercity behavior, reverse commercial transport or customer refunds.
+Use the existing GPS and COD contracts when those milestones are selected. Do not invent push, optimization, intercity behavior, partial commercial reverse-transport receipt or customer refunds.
 Use typed synthetic mocks for unavailable capabilities and label them clearly.
 Preserve command idempotency, version conflicts, custody boundaries, and code privacy.
 Avoid broad refactors; implement only the selected reviewable task.

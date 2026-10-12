@@ -37,6 +37,7 @@ async function post(path: string, payload: Record<string, unknown>, who: string)
 }
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const errors: string[] = [];
+let loseReturnReceipt = false;
 async function page(who?: string) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   if (who) {
@@ -47,7 +48,20 @@ async function page(who?: string) {
     const response = await route.fetch({
       headers: { ...route.request().headers(), origin: 'http://127.0.0.1:3001' },
     });
-    await route.fulfill({ response });
+    const req = route.request();
+    if (
+      loseReturnReceipt &&
+      req.method() === 'POST' &&
+      req.url().includes('/api/commercial-returns/') &&
+      req.postDataJSON()?.action === 'receive'
+    ) {
+      loseReturnReceipt = false;
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'رد اختبار مفقود بعد الحفظ' }),
+      });
+    } else await route.fulfill({ response });
   });
   const p = await ctx.newPage();
   p.on('pageerror', (e) => errors.push(e.message));
@@ -156,19 +170,85 @@ try {
   await merchant.goto(url);
   await merchant.getByRole('button', { name: 'مرتجعات العملاء', exact: true }).click();
   await merchant.getByRole('button', { name: 'قبول طلب الإرجاع', exact: true }).click();
-  await merchant.getByLabel('مرجع قرار الإرجاع').fill('قرار تجريبي 123');
+  await merchant.getByLabel('مرجع إجراء الإرجاع').fill('قرار تجريبي 123');
   await merchant
-    .getByLabel('رد المتجر الموضح للعميل')
+    .getByLabel('سبب الإجراء الموضح للعميل')
     .fill('قبول طلب الإرجاع لتنظيم استلام البضاعة');
-  await merchant.getByLabel('راجعت طلب العميل وأثر القرار وأوافق على عرضه للعميل.').check();
-  await merchant.getByRole('button', { name: 'تأكيد قرار الإرجاع', exact: true }).click();
+  await merchant.getByLabel('راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.').check();
+  await merchant.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
   await customer
     .getByText('رد المتجر: قبول طلب الإرجاع لتنظيم استلام البضاعة', { exact: true })
     .waitFor({ timeout: 15000 });
   assert.equal(await customer.locator('.shop-progress .done').count(), 5);
+  await observer.getByRole('button', { name: 'إغلاق النافذة' }).click();
+  await observer.getByRole('button', { name: 'مرتجعات العملاء', exact: true }).click();
+  await observer.getByRole('button', { name: 'إسناد استلام المرتجع', exact: true }).click();
+  await observer.getByLabel('مندوب استلام المرتجع').selectOption('courier-b');
+  await observer.getByLabel('مكان استلام المرتجع').fill('دمشق، الروضة، عنوان العميل المتفق عليه');
+  async function confirmReturn(p: typeof observer, waitForClose = true) {
+    await p.getByLabel('مرجع إجراء الإرجاع').fill('محضر إرجاع 123');
+    await p.getByLabel('سبب الإجراء الموضح للعميل').fill('تأكيد الإجراء الفعلي لكامل منتجات الطلب');
+    await p.getByLabel('راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.').check();
+    await p.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
+    if (waitForClose) await p.locator('.inventory-form').waitFor({ state: 'detached' });
+  }
+  await confirmReturn(observer);
+  const returning = await page('courier-b');
+  await returning.goto(url);
+  await returning.getByRole('button', { name: 'مرتجعات العملاء', exact: true }).click();
+  await returning.getByRole('button', { name: 'قبول مهمة الإرجاع', exact: true }).click();
+  await confirmReturn(returning);
+  await customer
+    .getByRole('button', { name: 'تأكيد تسليم المرتجع للمندوب', exact: true })
+    .waitFor({ timeout: 15000 });
+  await customer.getByRole('button', { name: 'تأكيد تسليم المرتجع للمندوب', exact: true }).click();
+  await customer.getByLabel('سبب طلب الإرجاع').fill('سلمت جميع المنتجات فعليًا للمندوب المكلف');
+  await customer.getByLabel('راجعت طلب الإرجاع وأؤكد تسجيله لطلبي.').check();
+  await customer.getByRole('button', { name: 'تسجيل تسليم المرتجع', exact: true }).click();
+  await returning
+    .getByRole('button', { name: 'تأكيد استلام المرتجع من العميل', exact: true })
+    .waitFor({ timeout: 15000 });
+  await returning
+    .getByRole('button', { name: 'تأكيد استلام المرتجع من العميل', exact: true })
+    .click();
+  await confirmReturn(returning);
+  await merchant
+    .getByRole('button', { name: 'تأكيد استلام كامل المرتجع في المنشأ', exact: true })
+    .waitFor({ timeout: 15000 });
+  await merchant
+    .getByRole('button', { name: 'تأكيد استلام كامل المرتجع في المنشأ', exact: true })
+    .click();
+  for (const width of [1440, 390, 360]) {
+    await merchant.setViewportSize({ width, height: 1000 });
+    assert.ok(await merchant.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await merchant.screenshot({
+      path: `artifacts/screenshots/commercial-return-receipt-${width}.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
+  loseReturnReceipt = true;
+  await confirmReturn(merchant, false);
+  await merchant
+    .getByRole('alert')
+    .getByText(/لم نتأكد من نتيجة الحفظ/)
+    .waitFor();
+  assert.equal(await merchant.getByLabel('مرجع إجراء الإرجاع').isDisabled(), true);
+  await merchant.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
+  await merchant.locator('.inventory-form').waitFor({ state: 'detached' });
+  await customer
+    .getByText('وصل للمنشأ — البضاعة في مسار الفحص', { exact: true })
+    .waitFor({ timeout: 15000 });
+  assert.equal(await customer.locator('.shop-progress .done').count(), 5);
+  const stock = (
+    await db.query<{ quarantine: number }>(
+      "SELECT quarantine FROM inventory_stock WHERE merchant_id='merchant-a' AND site_id='site-a' AND product_id='bag'",
+    )
+  ).rows[0];
+  assert.equal(stock.quarantine, 1);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: pickup COD confirmation guidance, Arabic digits, review reset, live route/timeline and customer progress, responsive 1440/390/360.',
+    'PASS: pickup COD confirmation guidance, Arabic digits, review reset, live route/timeline and customer progress, responsive 1440/390/360; commercial reverse transport and isolated stock receipt.',
   );
 } finally {
   await browser.close();

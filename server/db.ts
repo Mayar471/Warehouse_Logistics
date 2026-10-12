@@ -397,6 +397,39 @@ export async function openDatabase(path?: string) {
       CREATE TRIGGER commercial_return_guard BEFORE UPDATE OR DELETE ON commercial_returns FOR EACH ROW EXECUTE FUNCTION guard_commercial_return();
       INSERT INTO schema_migrations(version) VALUES(18);
     END IF; END $$;
+    DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=19) THEN
+      ALTER TABLE commercial_returns ADD COLUMN courier_id text REFERENCES couriers(id);
+      ALTER TABLE commercial_returns ADD COLUMN collection_address text;
+      ALTER TABLE commercial_returns ADD COLUMN assignment_expires_at timestamptz;
+      ALTER TABLE commercial_returns ADD COLUMN accepted_at timestamptz;
+      ALTER TABLE commercial_returns ADD COLUMN released_at timestamptz;
+      ALTER TABLE commercial_returns ADD COLUMN picked_up_at timestamptz;
+      ALTER TABLE commercial_returns ADD COLUMN received_at timestamptz;
+      ALTER TABLE commercial_returns ADD COLUMN issue_open boolean NOT NULL DEFAULT false;
+      ALTER TABLE commercial_returns DROP CONSTRAINT commercial_returns_status_check;
+      ALTER TABLE commercial_returns DROP CONSTRAINT commercial_returns_check;
+      ALTER TABLE commercial_returns ADD CONSTRAINT commercial_return_status CHECK(status IN ('requested','approved','rejected','cancelled','assigned','accepted','released','in_transit','received'));
+      ALTER TABLE commercial_returns ADD CONSTRAINT commercial_return_review CHECK((status='requested' AND reviewed_at IS NULL AND decision_reason IS NULL) OR (status NOT IN ('requested','cancelled') AND reviewed_at IS NOT NULL AND decision_reason IS NOT NULL) OR status='cancelled');
+      ALTER TABLE commercial_returns ADD CONSTRAINT commercial_return_transport CHECK(
+        (status IN ('requested','approved','rejected','cancelled') AND courier_id IS NULL AND accepted_at IS NULL AND released_at IS NULL AND picked_up_at IS NULL AND received_at IS NULL AND assignment_expires_at IS NULL AND NOT issue_open)
+        OR (status IN ('assigned','accepted','released','in_transit','received') AND courier_id IS NOT NULL AND collection_address IS NOT NULL AND ((status='assigned' AND assignment_expires_at IS NOT NULL AND accepted_at IS NULL) OR (status<>'assigned' AND assignment_expires_at IS NULL AND accepted_at IS NOT NULL)) AND (released_at IS NOT NULL)=(status IN ('released','in_transit','received')) AND (picked_up_at IS NOT NULL)=(status IN ('in_transit','received')) AND (received_at IS NOT NULL)=(status='received') AND (NOT issue_open OR status IN ('accepted','released','in_transit'))));
+      CREATE INDEX commercial_return_courier ON commercial_returns(courier_id,status);
+      CREATE OR REPLACE FUNCTION guard_commercial_return() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN
+        IF TG_OP='DELETE' OR (to_jsonb(OLD)-ARRAY['status','version','reviewed_at','cancelled_at','decision_reason','courier_id','collection_address','assignment_expires_at','accepted_at','released_at','picked_up_at','received_at','issue_open'])<>(to_jsonb(NEW)-ARRAY['status','version','reviewed_at','cancelled_at','decision_reason','courier_id','collection_address','assignment_expires_at','accepted_at','released_at','picked_up_at','received_at','issue_open']) OR NEW.version<>OLD.version+1 OR NOT (
+          (OLD.status='requested' AND NEW.status IN ('approved','rejected','cancelled')) OR
+          (OLD.status='approved' AND NEW.status IN ('assigned','cancelled')) OR
+          (OLD.status='assigned' AND NEW.status IN ('accepted','approved','cancelled')) OR
+          (OLD.status='accepted' AND NEW.status IN ('released','approved','cancelled','accepted')) OR
+          (OLD.status='released' AND NEW.status IN ('in_transit','released')) OR
+          (OLD.status='in_transit' AND NEW.status IN ('received','in_transit'))
+        ) THEN RAISE EXCEPTION 'Commercial return history is protected' USING ERRCODE='23514'; END IF;
+        IF OLD.reviewed_at IS NOT NULL AND (NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason) THEN RAISE EXCEPTION 'Return review is immutable' USING ERRCODE='23514'; END IF;
+        IF OLD.released_at IS NOT NULL AND (NEW.released_at IS DISTINCT FROM OLD.released_at OR NEW.courier_id IS DISTINCT FROM OLD.courier_id OR NEW.collection_address IS DISTINCT FROM OLD.collection_address OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at) THEN RAISE EXCEPTION 'Return custody is protected' USING ERRCODE='23514'; END IF;
+        IF OLD.picked_up_at IS NOT NULL AND NEW.picked_up_at IS DISTINCT FROM OLD.picked_up_at THEN RAISE EXCEPTION 'Return pickup is immutable' USING ERRCODE='23514'; END IF;
+        RETURN NEW;
+      END $f$;
+      INSERT INTO schema_migrations(version) VALUES(19);
+    END IF; END $$;
     CREATE TABLE IF NOT EXISTS delivery_proofs (shipment_id uuid PRIMARY KEY REFERENCES shipments(id),code_hash text NOT NULL,expires_at timestamptz NOT NULL,issued_at timestamptz NOT NULL,attempts integer NOT NULL DEFAULT 0,consumed_at timestamptz);
     CREATE TABLE IF NOT EXISTS demo_settings (id integer PRIMARY KEY CHECK(id=1), webhook_paused boolean NOT NULL DEFAULT false);
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;

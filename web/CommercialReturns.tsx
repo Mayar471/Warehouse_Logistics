@@ -1,14 +1,41 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { Account } from '../shared/contracts.js';
+import type { Account, Courier } from '../shared/contracts.js';
 import type { CommercialReturn, CommercialReturnView } from '../shared/commercial-returns.js';
 import { commercialReturnLabels } from '../shared/commercial-returns.js';
 import { catalog } from '../shared/catalog.js';
 import { api, ApiError, key } from './api.js';
-export function CommercialReturns({ account }: { account: Account }) {
+type ReturnAction =
+  | 'approve'
+  | 'reject'
+  | 'assign'
+  | 'accept'
+  | 'decline'
+  | 'unassign'
+  | 'pickup'
+  | 'receive'
+  | 'report';
+const actionLabels: Record<ReturnAction, string> = {
+  approve: 'قبول طلب الإرجاع',
+  reject: 'رفض طلب الإرجاع',
+  assign: 'إسناد استلام المرتجع',
+  accept: 'قبول مهمة الإرجاع',
+  decline: 'رفض مهمة الإرجاع',
+  unassign: 'تحرير إسناد الإرجاع',
+  pickup: 'تأكيد استلام المرتجع من العميل',
+  receive: 'تأكيد استلام كامل المرتجع في المنشأ',
+  report: 'تسجيل تعثر المرتجع',
+};
+export function CommercialReturns({
+  account,
+  couriers,
+}: {
+  account: Account;
+  couriers: Courier[];
+}) {
   const [view, setView] = useState<CommercialReturnView | null>(null),
-    [target, setTarget] = useState<{ row: CommercialReturn; action: 'approve' | 'reject' } | null>(
-      null,
-    ),
+    [target, setTarget] = useState<{ row: CommercialReturn; action: ReturnAction } | null>(null),
+    [courierId, setCourierId] = useState(''),
+    [collectionAddress, setCollectionAddress] = useState(''),
     [reference, setReference] = useState(''),
     [reason, setReason] = useState(''),
     [reviewed, setReviewed] = useState(false),
@@ -28,10 +55,33 @@ export function CommercialReturns({ account }: { account: Account }) {
   useEffect(() => {
     if (target) form.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [target]);
+  useEffect(() => {
+    if (target || busy || uncertain) return;
+    let stopped = false,
+      inFlight = false;
+    const timer = window.setInterval(async () => {
+      if (stopped || inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      try {
+        const next = await api<CommercialReturnView>('/api/commercial-returns');
+        if (!stopped) setView(next);
+      } catch {
+        /* Retain the last confirmed view on background failures. */
+      } finally {
+        inFlight = false;
+      }
+    }, 5000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [target, busy, uncertain]);
   const locked = busy || uncertain;
-  function open(row: CommercialReturn, action: 'approve' | 'reject') {
+  function open(row: CommercialReturn, action: ReturnAction) {
     setTarget({ row, action });
     setReference('');
+    setCourierId('');
+    setCollectionAddress('');
     setReason('');
     setReviewed(false);
     setError('');
@@ -44,6 +94,7 @@ export function CommercialReturns({ account }: { account: Account }) {
       expectedVersion: target.row.version,
       reference,
       reason,
+      ...(target.action === 'assign' ? { courierId, collectionAddress } : {}),
     });
     if (!pending.current || pending.current.body !== body) pending.current = { body, key: key() };
     submitting.current = true;
@@ -88,11 +139,11 @@ export function CommercialReturns({ account }: { account: Account }) {
     <div className="inventory-view">
       <section className="inventory-intro">
         <div>
-          <span className="eyebrow">طلب العميل وقرار المتجر قبل حركة البضاعة</span>
+          <span className="eyebrow">إرجاع موثّق من العميل حتى منشأ الطلب</span>
           <h2>مرتجعات العملاء</h2>
           <p>
-            نراجع إرجاع كامل الطلب بعد تسليمه. قبول الإرجاع لا يسجل استلام بضاعة أو زيادة مخزون أو
-            رد أموال؛ النقل والفحص والرد المالي مراحل تالية.
+            تابع القرار وإسناد الاستلام والعهدة حتى وصول البضاعة للمنشأ. تُعزل الكميات المستلمة
+            للفحص قبل إتاحتها للبيع. رد نقد العميل مرحلة مستقلة لم تُنفذ بعد.
           </p>
         </div>
       </section>
@@ -110,7 +161,9 @@ export function CommercialReturns({ account }: { account: Account }) {
         <div className="cash-metrics">
           {[
             ['بانتظار مراجعة المتجر', view.requested],
-            ['مقبولة بانتظار الاستلام', view.approved],
+            ['مقبولة بانتظار الإسناد', view.approved],
+            ['مهام استلام ونقل', view.active],
+            ['وصلت للمنشأ', view.received],
           ].map(([label, value]) => (
             <div className="panel" key={String(label)}>
               <span>{label}</span>
@@ -127,19 +180,71 @@ export function CommercialReturns({ account }: { account: Account }) {
       {target && (
         <form ref={form} className="panel inventory-form" onSubmit={(e) => void submit(e)}>
           <h3>
-            {target.action === 'approve' ? 'قبول بدء الإرجاع' : 'رفض طلب الإرجاع'} ·{' '}
-            {target.row.shipmentReference}
+            {actionLabels[target.action]} · {target.row.shipmentReference}
           </h3>
           <p>
             جميع منتجات الطلب · قيمة البضائع المرجعية{' '}
-            {new Intl.NumberFormat('ar-SY').format(target.row.goodsMinor / 100)} ل.س. يبقى تسليم
-            الطلب والمخزون والحساب المالي كما هو حتى تنفيذ مراحله اللاحقة.
+            {new Intl.NumberFormat('ar-SY').format(target.row.goodsMinor / 100)} ل.س. يبقى الطلب
+            الأصلي مسلّمًا. راجع الإجراء الفعلي؛ لا تسجل وصول البضاعة قبل استلام كامل الكميات.
           </p>
+          {target.action === 'pickup' && (
+            <p className="scope-note">
+              سجل العميل تسليم الطرد. أكد الاستلام الفعلي لجميع المنتجات فقط؛ بعدها تنتقل العهدة
+              إليك.
+            </p>
+          )}
+          {target.action === 'receive' && (
+            <p className="scope-note">
+              أكد استلام جميع الكميات المذكورة من المندوب في منشأ الطلب. عند نقص البضاعة أبقِ المهمة
+              مفتوحة وسجّل تعثرًا؛ لا تسجّل كمية غير مستلمة.
+            </p>
+          )}
           <fieldset className="inventory-fields" disabled={locked}>
+            {target.action === 'assign' && (
+              <>
+                <label>
+                  مندوب استلام المرتجع
+                  <select
+                    aria-label="مندوب استلام المرتجع"
+                    value={courierId}
+                    required
+                    onChange={(e) => {
+                      setCourierId(e.target.value);
+                      setReviewed(false);
+                    }}
+                  >
+                    <option value="">اختر المندوب</option>
+                    {(view?.couriers ?? couriers)
+                      .filter((c) => c.available)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} · {c.capacityKg - c.activeKg} كغ متاحة
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  مكان استلام متفق عليه مع العميل
+                  <input
+                    aria-label="مكان استلام المرتجع"
+                    required
+                    minLength={10}
+                    maxLength={240}
+                    placeholder="دمشق، الحي والعنوان المتفق عليه"
+                    value={collectionAddress}
+                    onChange={(e) => {
+                      setCollectionAddress(e.target.value);
+                      setReviewed(false);
+                    }}
+                  />
+                </label>
+              </>
+            )}
+
             <label>
-              مرجع قرار الإرجاع
+              مرجع إجراء الإرجاع
               <input
-                aria-label="مرجع قرار الإرجاع"
+                aria-label="مرجع إجراء الإرجاع"
                 required
                 minLength={3}
                 maxLength={100}
@@ -151,9 +256,9 @@ export function CommercialReturns({ account }: { account: Account }) {
               />
             </label>
             <label>
-              رد المتجر الموضح للعميل
+              سبب الإجراء الموضح للعميل
               <textarea
-                aria-label="رد المتجر الموضح للعميل"
+                aria-label="سبب الإجراء الموضح للعميل"
                 required
                 minLength={5}
                 maxLength={240}
@@ -171,12 +276,12 @@ export function CommercialReturns({ account }: { account: Account }) {
                 required
                 onChange={(e) => setReviewed(e.target.checked)}
               />
-              راجعت طلب العميل وأثر القرار وأوافق على عرضه للعميل.
+              راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.
             </label>
           </fieldset>
           <div className="button-row">
             <button className="button primary" disabled={busy || !reviewed}>
-              تأكيد قرار الإرجاع
+              تأكيد إجراء الإرجاع
             </button>
             <button
               type="button"
@@ -208,6 +313,59 @@ export function CommercialReturns({ account }: { account: Account }) {
                 .join(' · ')}
             </p>
             {r.decisionReason && <p>رد المتجر: {r.decisionReason}</p>}
+            {r.courierId && (
+              <p>
+                المندوب: {r.courierName} · الاستلام من: {r.collectionAddress} · الإرجاع إلى:{' '}
+                {r.originName}
+              </p>
+            )}
+            <p>
+              حائز البضاعة:{' '}
+              {r.status === 'received'
+                ? r.originName
+                : r.status === 'in_transit'
+                  ? r.courierName
+                  : r.status === 'released'
+                    ? 'تسليم العميل مسجل؛ بانتظار إقرار المندوب'
+                    : 'العميل'}
+            </p>
+            {r.issueOpen && (
+              <p className="alert">بلاغ تعثر مفتوح؛ العهدة والسعة محفوظتان حتى معالجة الاستلام.</p>
+            )}
+            {r.status === 'received' && (
+              <p className="scope-note">
+                استُلمت الكميات وعُزلت للفحص في شاشة المخزون. لم يُسجّل رد نقد العميل.
+              </p>
+            )}
+            <div className="button-row">
+              {(account.role === 'operator'
+                ? r.status === 'approved'
+                  ? ['assign']
+                  : ['assigned', 'accepted'].includes(r.status)
+                    ? ['unassign']
+                    : []
+                : account.role === 'courier'
+                  ? r.status === 'assigned'
+                    ? ['accept', 'decline']
+                    : r.status === 'released'
+                      ? ['pickup', 'report']
+                      : ['accepted', 'in_transit'].includes(r.status)
+                        ? ['report']
+                        : []
+                  : r.status === 'in_transit'
+                    ? ['receive']
+                    : []
+              ).map((action) => (
+                <button
+                  key={action}
+                  className="button secondary"
+                  disabled={locked || !!target}
+                  onClick={() => open(r, action as ReturnAction)}
+                >
+                  {actionLabels[action as ReturnAction]}
+                </button>
+              ))}
+            </div>
             {account.role === 'merchant' && r.status === 'requested' && (
               <div className="button-row">
                 <button
@@ -242,7 +400,7 @@ export function CommercialReturns({ account }: { account: Account }) {
       )}
       {view && (
         <section className="panel inventory-panel">
-          <h3>سجل مراجعة المرتجعات</h3>
+          <h3>سجل إجراءات الإرجاع</h3>
           <div className="inventory-ledger">
             {view.history.map((e) => (
               <div key={e.id}>
@@ -255,6 +413,15 @@ export function CommercialReturns({ account }: { account: Account }) {
                           approve: 'قبول المتجر',
                           reject: 'رفض المتجر',
                           cancel: 'سحب العميل',
+                          assign: 'إسناد الاستلام',
+                          accept: 'قبول المندوب',
+                          decline: 'رفض المندوب',
+                          unassign: 'تحرير الإسناد',
+                          handover: 'تسليم العميل',
+                          pickup: 'استلام المندوب',
+                          receive: 'استلام المنشأ والعزل',
+                          report: 'بلاغ تعثر',
+                          assignment_expired: 'انتهاء مهلة القبول',
                         } as Record<string, string>
                       )[e.action]
                     }{' '}

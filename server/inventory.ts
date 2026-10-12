@@ -193,8 +193,13 @@ export async function inventoryTransition(
       assert(line.state === 'dispatched', 409, 'INVENTORY_STATE', 'لم تسجل مغادرة مخزون الطلب');
       state = 'fulfilled';
     }
-    if (action === 'receive_return') {
-      assert(line.state === 'dispatched', 409, 'INVENTORY_STATE', 'لم يسجل خروج مخزون المرتجع');
+    if (action === 'receive_return' || action === 'commercial_receive') {
+      assert(
+        line.state === (action === 'commercial_receive' ? 'fulfilled' : 'dispatched'),
+        409,
+        'INVENTORY_STATE',
+        'لم يسجل خروج مخزون المرتجع',
+      );
       state = 'quarantined';
       onHand = line.quantity;
       quarantine = line.quantity;
@@ -212,9 +217,9 @@ export async function inventoryTransition(
       tx,
       line,
       row.id,
-      action,
+      action === 'commercial_receive' ? 'receive_return' : action,
       actor,
-      action === 'receive_return'
+      action === 'receive_return' || action === 'commercial_receive'
         ? 'مرتجع معزول بانتظار فحص الصلاحية؛ غير متاح للبيع'
         : 'حركة مرتبطة بدورة تنفيذ الطلب',
     );

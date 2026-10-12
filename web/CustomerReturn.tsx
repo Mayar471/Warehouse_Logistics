@@ -9,9 +9,10 @@ export function CustomerReturn({
   order: StoreOrder;
   onChanged: () => Promise<void>;
 }) {
-  const [target, setTarget] = useState<{ action: 'request' | 'cancel'; version: number } | null>(
-      null,
-    ),
+  const [target, setTarget] = useState<{
+      action: 'request' | 'cancel' | 'handover';
+      version: number;
+    } | null>(null),
     [reason, setReason] = useState(''),
     [reviewed, setReviewed] = useState(false),
     [busy, setBusy] = useState(false),
@@ -21,7 +22,7 @@ export function CustomerReturn({
     submitting = useRef(false);
   const r = order.commercialReturn,
     locked = busy || uncertain;
-  function open(action: 'request' | 'cancel') {
+  function open(action: 'request' | 'cancel' | 'handover') {
     setTarget({ action, version: action === 'request' ? order.shipment.version : r!.version });
     setReason('');
     setReviewed(false);
@@ -89,16 +90,30 @@ export function CustomerReturn({
           {new Intl.NumberFormat('ar-SY').format(order.subtotalMinor / 100)} ل.س.
         </p>
       )}
+      {r?.courierId && (
+        <p>
+          مندوب الإرجاع: {r.courierName} · مكان الاستلام المتفق عليه: {r.collectionAddress} ·
+          الوجهة: {r.originName}
+        </p>
+      )}
+      {r?.issueOpen && (
+        <p className="alert">يوجد بلاغ تعثر؛ العهدة محفوظة ولم يُسجّل استلام بضاعة أو رد نقد.</p>
+      )}
       <p className="scope-note">
-        يبقى الطلب الأصلي مسلّمًا. قبول الطلب يبدأ ترتيب الإرجاع؛ استلام البضاعة وفحصها ورد النقد
-        مراحل مستقلة لم تُنفذ هنا بعد.
+        يبقى الطلب الأصلي مسلّمًا. تأكيد تسليم المرتجع للمندوب لا يعني رد المال. بعد وصوله للمنشأ
+        تُعزل البضاعة للفحص؛ رد أموال العميل مرحلة لاحقة.
       </p>
+      {!target && r?.status === 'accepted' && (
+        <button className="shop-primary" onClick={() => open('handover')}>
+          تأكيد تسليم المرتجع للمندوب
+        </button>
+      )}
       {!target &&
         (!r ? (
           <button className="shop-secondary" onClick={() => open('request')}>
             طلب إرجاع كامل الطلب
           </button>
-        ) : ['requested', 'approved'].includes(r.status) ? (
+        ) : ['requested', 'approved', 'assigned', 'accepted'].includes(r.status) ? (
           <button className="shop-secondary" onClick={() => open('cancel')}>
             سحب طلب الإرجاع
           </button>
@@ -110,9 +125,20 @@ export function CustomerReturn({
       )}
       {target && (
         <form onSubmit={(e) => void submit(e)}>
+          {target.action === 'handover' && (
+            <p>
+              أكد أنك سلّمت جميع منتجات الطلب فعليًا إلى {r?.courierName}. لا تؤكد قبل حضوره
+              واستلامه؛ بعدها يتوقف سحب الطلب حتى معالجة العهدة.
+            </p>
+          )}
           <fieldset disabled={locked}>
             <label>
-              سبب {target.action === 'request' ? 'الإرجاع' : 'سحب الإرجاع'}
+              سبب{' '}
+              {target.action === 'request'
+                ? 'الإرجاع'
+                : target.action === 'handover'
+                  ? 'إقرار التسليم'
+                  : 'سحب الإرجاع'}
               <textarea
                 aria-label="سبب طلب الإرجاع"
                 minLength={5}
@@ -137,7 +163,11 @@ export function CustomerReturn({
           </fieldset>
           <div className="button-row">
             <button className="shop-primary" disabled={busy || !reviewed} type="submit">
-              {busy ? 'جارٍ الحفظ…' : 'تأكيد طلب الإرجاع'}
+              {busy
+                ? 'جارٍ الحفظ…'
+                : target.action === 'handover'
+                  ? 'تسجيل تسليم المرتجع'
+                  : 'تأكيد طلب الإرجاع'}
             </button>
             <button
               className="shop-secondary"

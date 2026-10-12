@@ -1,4 +1,4 @@
-import { registerCommercialReturns } from './commercial-returns.js';
+import { registerCommercialReturns, expireCommercialReturns } from './commercial-returns.js';
 import { registerFinancialRecovery } from './financial-recovery.js';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -133,6 +133,7 @@ export function buildApp(
     write(async (tx) => {
       const shipments = await expireAssignments(tx, clock());
       await expireTransfers(tx, clock());
+      await expireCommercialReturns(tx, clock());
       await expireSharing(tx, clock());
       return shipments;
     });

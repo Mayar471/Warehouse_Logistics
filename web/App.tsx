@@ -88,6 +88,7 @@ const labels: Record<string, string> = {
   integration: 'مختبر التكامل',
 };
 const eventLabels: Record<string, string> = {
+  commercial_return_received: 'استلام إرجاع العميل وعزله',
   prepare: 'تجهيز الطرد',
   handover_origin: 'تسليم من المنشأ',
   pickup_overdue: 'تأخر الاستلام من المنشأ',
@@ -370,7 +371,9 @@ export function App() {
               (n) =>
                 operator ||
                 ['overview', 'shipments', 'cash'].includes(n.id) ||
-                ((n.id === 'returns' || n.id === 'payouts') && data?.account.role === 'merchant') ||
+                (n.id === 'returns' &&
+                  ['merchant', 'courier'].includes(data?.account.role ?? '')) ||
+                (n.id === 'payouts' && data?.account.role === 'merchant') ||
                 (n.id === 'inventory' && data?.account.role === 'merchant') ||
                 (n.id === 'transfers' &&
                   ['merchant', 'courier'].includes(data?.account.role ?? '')),
@@ -792,7 +795,11 @@ export function App() {
                   />
                 )}
                 {nav === 'returns' && (
-                  <CommercialReturns key={data.account.id} account={data.account} />
+                  <CommercialReturns
+                    key={data.account.id}
+                    account={data.account}
+                    couriers={data.couriers}
+                  />
                 )}
                 {nav === 'cash' && <Cash key={data.account.id} account={data.account} />}
                 {nav === 'payouts' && <Payouts key={data.account.id} account={data.account} />}

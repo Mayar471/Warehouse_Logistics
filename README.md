@@ -74,6 +74,8 @@ npm run build
 
 ## المراجع
 
+- [الإرجاع التجاري: نقل واستلام معزول وفحص](./docs/COMMERCIAL-RETURN-TRANSPORT.md) — رد أموال العميل لاحق.
+
 - [بدء عمل مطوّر Flutter والعقود الحالية](./docs/FLUTTER-HANDOFF.md)
 - [خطة الموبايل والمكونات](./docs/MOBILE-DEVELOPMENT-PLAN.md)
 - [خطة التنفيذ](./DEVELOPMENT-PLAN.md)

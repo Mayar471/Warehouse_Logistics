@@ -221,7 +221,7 @@ export function registerStorefront(
           .strict(),
         z
           .object({
-            action: z.literal('cancel'),
+            action: z.enum(['cancel', 'handover']),
             expectedReturnVersion: z.number().int().positive(),
             reason,
           })
@@ -253,7 +253,7 @@ export function registerStorefront(
             [id, sale.id],
           )
         ).rows[0];
-        if (b.action === 'cancel') {
+        if (b.action !== 'request') {
           assert(existing, 404, 'NOT_FOUND', 'طلب الإرجاع غير موجود');
           assert(
             existing.version === b.expectedReturnVersion,
@@ -262,25 +262,30 @@ export function registerStorefront(
             'تغير طلب الإرجاع؛ راجع حالته',
           );
           assert(
-            ['requested', 'approved'].includes(existing.status),
+            b.action === 'handover'
+              ? existing.status === 'accepted'
+              : ['requested', 'approved', 'assigned', 'accepted'].includes(existing.status),
             409,
             'INVALID_STATE',
             'لا يمكن سحب طلب الإرجاع في حالته الحالية',
           );
+          const status = b.action === 'handover' ? 'released' : 'cancelled';
           await tx.query(
-            "UPDATE commercial_returns SET status='cancelled',version=version+1,cancelled_at=$2 WHERE id=$1",
+            b.action === 'handover'
+              ? "UPDATE commercial_returns SET status='released',version=version+1,released_at=$2 WHERE id=$1"
+              : "UPDATE commercial_returns SET status='cancelled',version=version+1,cancelled_at=$2,courier_id=NULL,accepted_at=NULL,assignment_expires_at=NULL,issue_open=false WHERE id=$1",
             [existing.id, new Date((options.clock ?? Date.now)()).toISOString()],
           );
           await returnEvent(
             tx,
             existing.id,
-            'cancel',
+            b.action,
             ownerHash,
             'العميل',
-            'سحب طلب العميل',
+            b.action === 'handover' ? 'تسليم العميل للمندوب' : 'سحب طلب العميل',
             b.reason,
           );
-          return { id: existing.id, status: 'cancelled', version: existing.version + 1 };
+          return { id: existing.id, status, version: existing.version + 1 };
         }
         assert(
           sale.status === 'delivered',

@@ -383,7 +383,7 @@ const activeStatuses = [
 ];
 export async function courierCapacity(tx: Transaction, courierId: string) {
   const r = await tx.query<{ active_kg: number }>(
-    `SELECT (COALESCE((SELECT SUM(weight_kg) FROM shipments WHERE courier_id=$1 AND status=ANY($2)),0)+COALESCE((SELECT SUM(weight_kg) FROM inventory_transfers WHERE courier_id=$1 AND status IN ('assigned','accepted','released','in_transit')),0))::real active_kg`,
+    `SELECT (COALESCE((SELECT SUM(weight_kg) FROM shipments WHERE courier_id=$1 AND status=ANY($2)),0)+COALESCE((SELECT SUM(weight_kg) FROM inventory_transfers WHERE courier_id=$1 AND status IN ('assigned','accepted','released','in_transit')),0)+COALESCE((SELECT SUM(s.weight_kg) FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id WHERE r.courier_id=$1 AND r.status IN ('assigned','accepted','released','in_transit')),0))::real active_kg`,
     [courierId, activeStatuses],
   );
   return r.rows[0].active_kg;

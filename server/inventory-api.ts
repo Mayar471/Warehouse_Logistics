@@ -447,7 +447,19 @@ export function registerInventory(
           'VERSION_CONFLICT',
           'تغير المرتجع؛ حدّث البيانات ثم أعد المحاولة',
         );
-        assert(row.status === 'returned', 409, 'INVALID_TRANSITION', 'لم يصل المرتجع إلى المنشأ');
+        assert(
+          row.status === 'returned' ||
+            (row.status === 'delivered' &&
+              (
+                await tx.query(
+                  "SELECT id FROM commercial_returns WHERE shipment_id=$1 AND status='received'",
+                  [id],
+                )
+              ).rows.length > 0),
+          409,
+          'INVALID_TRANSITION',
+          'لم يصل المرتجع إلى المنشأ',
+        );
         const lines = (
           await tx.query<{
             merchant_id: string;

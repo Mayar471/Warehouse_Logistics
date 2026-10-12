@@ -194,7 +194,7 @@ test('upgrade from collection schema preserves sealed cash entries, then payout 
     await restoreCashSchema15(f.db);
     // This isolated fixture recreates schema 12, before commercial returns existed.
     await f.db.exec(
-      'DROP TABLE commercial_return_events; DROP TABLE commercial_returns; DROP FUNCTION guard_commercial_return(); DROP INDEX checkout_shipment_pair; DELETE FROM schema_migrations WHERE version=18;',
+      'DROP TABLE commercial_return_events; DROP TABLE commercial_returns; DROP FUNCTION guard_commercial_return(); DROP INDEX checkout_shipment_pair; DELETE FROM schema_migrations WHERE version IN (18,19);',
     );
     await f.db.exec(
       "DROP TRIGGER cash_reversal_valid ON cash_journals; DROP FUNCTION validate_cash_reversal(); ALTER TABLE cash_journals DROP COLUMN reverses_journal_id CASCADE; DELETE FROM schema_migrations WHERE version IN (14,15); DROP INDEX cash_original_journal; DROP INDEX cash_payout_journal; ALTER TABLE cash_journals DROP COLUMN payout_id CASCADE; ALTER TABLE cash_journals DROP CONSTRAINT cash_journals_kind_check; ALTER TABLE cash_journals ADD CONSTRAINT cash_journals_kind_check CHECK(kind IN ('collection','remittance')); ALTER TABLE cash_journals ADD CONSTRAINT cash_journals_shipment_id_kind_key UNIQUE(shipment_id,kind); DROP TABLE cash_payout_events; DROP TABLE cash_payouts; DROP INDEX shipment_merchant_owner; DELETE FROM schema_migrations WHERE version=13;",
