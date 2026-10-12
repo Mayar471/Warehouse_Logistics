@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommercialReturns } from './CommercialReturns.js';
+import { CourierReturnTasks } from './CourierReturnTasks.js';
 import { Inventory } from './Inventory.js';
 import { InventoryTransfers } from './InventoryTransfers.js';
 import { FinancialNotice } from './FinancialRecovery.js';
@@ -541,6 +542,9 @@ export function App() {
                 )}
                 {nav === 'overview' && (
                   <>
+                    {data.account.role === 'courier' && (
+                      <CourierReturnTasks key={data.account.id} onOpen={() => setNav('returns')} />
+                    )}
                     <div className="stats-grid">
                       <Metric
                         title="إجمالي الشحنات"
