@@ -213,25 +213,34 @@ try {
   }
   const returning = await page('courier-b');
   await returning.goto(url);
-  const returnShortcut = returning.getByRole('region', { name: 'مهام إرجاع المندوب' });
-  await returnShortcut
-    .getByText('لا توجد مهام إرجاع نشطة مسندة إليك حاليًا.', { exact: true })
-    .waitFor();
+  const taskList = returning.getByRole('region', { name: 'قائمة مهام المندوب' });
+  assert.equal(await taskList.getByText('استلام مرتجع', { exact: true }).count(), 0);
   await confirmReturn(observer);
-  await returnShortcut.getByText(/مهمة إرجاع مسندة إليك قيد التنفيذ/).waitFor({ timeout: 15000 });
+  const returnTask = taskList.getByRole('button', {
+    name: `تفاصيل إرجاع ${shipment.reference}`,
+    exact: true,
+  });
+  await returnTask.waitFor({ timeout: 15000 });
+  await taskList.getByLabel('تصفية مهام المندوب').selectOption('return');
+  assert.equal(await taskList.locator('tbody tr').count(), 1);
+  await taskList.getByLabel('البحث في مهام المندوب').fill('مهمة غير موجودة');
+  await taskList.getByText('لا توجد مهام تطابق البحث والتصفية.', { exact: true }).waitFor();
+  await taskList.getByLabel('البحث في مهام المندوب').fill(shipment.reference);
+  await returnTask.waitFor();
+  await taskList.getByLabel('البحث في مهام المندوب').fill('');
+  await taskList.getByLabel('تصفية مهام المندوب').selectOption('all');
+  assert.ok((await taskList.getByText('توصيل', { exact: true }).count()) > 0);
   for (const width of [1440, 390, 360]) {
     await returning.setViewportSize({ width, height: 1000 });
     assert.ok(await returning.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await returnShortcut
-      .getByRole('button', { name: 'فتح مهام المرتجعات', exact: true })
-      .scrollIntoViewIfNeeded();
+    await taskList.scrollIntoViewIfNeeded();
     await returning.screenshot({
-      path: `artifacts/screenshots/courier-return-home-${width}.png`,
+      path: `artifacts/screenshots/courier-unified-tasks-${width}.png`,
       fullPage: true,
       animations: 'disabled',
     });
   }
-  await returnShortcut.getByRole('button', { name: 'فتح مهام المرتجعات', exact: true }).click();
+  await returnTask.click();
   await returning.getByRole('button', { name: 'قبول مهمة الإرجاع', exact: true }).click();
   await confirmReturn(returning);
   await customer

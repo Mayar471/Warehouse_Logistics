@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommercialReturns } from './CommercialReturns.js';
-import { CourierReturnTasks } from './CourierReturnTasks.js';
+import { CourierTasks } from './CourierTasks.js';
 import { Inventory } from './Inventory.js';
 import { InventoryTransfers } from './InventoryTransfers.js';
 import { FinancialNotice } from './FinancialRecovery.js';
@@ -209,6 +209,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedReturn, setSelectedReturn] = useState<string | null>(null);
+  const [returnRevision, setReturnRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [menu, setMenu] = useState(false);
@@ -224,6 +226,7 @@ export function App() {
   const refresh = useCallback(async () => {
     const fresh = await api<Bootstrap>('/api/bootstrap');
     setData(fresh);
+    setReturnRevision((x) => x + 1);
     setError('');
   }, []);
   const report = useCallback(
@@ -285,6 +288,7 @@ export function App() {
     try {
       await api('/api/demo/session', { method: 'POST', body: JSON.stringify({ accountId: id }) });
       setSelected(null);
+      setSelectedReturn(null);
       setNav('overview');
       setSearch('');
       setFilter('all');
@@ -542,9 +546,6 @@ export function App() {
                 )}
                 {nav === 'overview' && (
                   <>
-                    {data.account.role === 'courier' && (
-                      <CourierReturnTasks key={data.account.id} onOpen={() => setNav('returns')} />
-                    )}
                     <div className="stats-grid">
                       <Metric
                         title="إجمالي الشحنات"
@@ -636,17 +637,20 @@ export function App() {
                     </div>
                   </>
                 )}
-                {['overview', 'shipments'].includes(nav) && (
+                {data.account.role === 'courier' && ['overview', 'shipments'].includes(nav) && (
+                  <CourierTasks
+                    key={data.account.id}
+                    shipments={shipments}
+                    revision={returnRevision}
+                    onShipment={setSelected}
+                    onReturn={setSelectedReturn}
+                  />
+                )}
+                {data.account.role !== 'courier' && ['overview', 'shipments'].includes(nav) && (
                   <section className="panel shipments-panel">
                     <div className="panel-title">
                       <div>
-                        <h2>
-                          {data.account.role === 'courier'
-                            ? 'مهامك الحالية'
-                            : nav === 'overview'
-                              ? 'الشحنات الأخيرة'
-                              : 'جميع الشحنات'}
-                        </h2>
+                        <h2>{nav === 'overview' ? 'الشحنات الأخيرة' : 'جميع الشحنات'}</h2>
                         <p>تتبّع الحالة وافتح التفاصيل للإجراء التالي</p>
                       </div>
                       <span className="subtle-chip">{fmt.format(shipments.length)} شحنة</span>
@@ -843,6 +847,24 @@ export function App() {
           }}
           report={report}
         />
+      )}
+      {selectedReturn && data?.account.role === 'courier' && (
+        <Modal
+          title="مهمة استلام مرتجع"
+          subtitle="الاستلام والعهدة والإجراء التالي"
+          wide
+          onClose={() => setSelectedReturn(null)}
+        >
+          <CommercialReturns
+            key={data.account.id + selectedReturn}
+            account={data.account}
+            couriers={data.couriers}
+            focusId={selectedReturn}
+            onChanged={async () => {
+              await refresh();
+            }}
+          />
+        </Modal>
       )}
       {selected && data && (
         <ShipmentDetails

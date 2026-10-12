@@ -14,7 +14,7 @@ import {
   loadShipment,
   appendEvent,
 } from './domain.js';
-export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen",${refundJson} AS refund,(r.status='received' AND EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id) AND NOT EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id AND i.quantity<>i.restocked_quantity+i.discarded_quantity)) AS "inspectionComplete" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
+export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",s.recipient_name AS "recipientName",COALESCE((SELECT MAX(e.created_at) FROM commercial_return_events e WHERE e.return_id=r.id),r.created_at) AS "updatedAt",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen",${refundJson} AS refund,(r.status='received' AND EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id) AND NOT EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id AND i.quantity<>i.restocked_quantity+i.discarded_quantity)) AS "inspectionComplete" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
 export async function returnEvent(
   tx: Transaction,
   id: string,
@@ -49,29 +49,32 @@ export function registerCommercialReturns(
   };
   app.get('/api/commercial-returns', async (req) => {
     const a = access(req);
+    const selected =
+      z.object({ returnId: z.string().uuid().optional() }).strict().parse(req.query).returnId ??
+      null;
     return write(async (tx) => {
       const owner = a.role === 'merchant' ? a.merchantId : null,
         courier = a.role === 'courier' ? a.courierId : null;
       const totals = (
         await tx.query(
-          "SELECT COUNT(*)::integer total,COUNT(*) FILTER(WHERE status='requested')::integer requested,COUNT(*) FILTER(WHERE status='approved')::integer approved,COUNT(*) FILTER(WHERE status IN ('assigned','accepted','released','in_transit'))::integer active,COUNT(*) FILTER(WHERE status='received')::integer received FROM commercial_returns WHERE ($1::text IS NULL OR merchant_id=$1) AND ($2::text IS NULL OR courier_id=$2)",
-          [owner, courier],
+          "SELECT COUNT(*)::integer total,COUNT(*) FILTER(WHERE status='requested')::integer requested,COUNT(*) FILTER(WHERE status='approved')::integer approved,COUNT(*) FILTER(WHERE status IN ('assigned','accepted','released','in_transit'))::integer active,COUNT(*) FILTER(WHERE status='received')::integer received FROM commercial_returns WHERE ($1::text IS NULL OR merchant_id=$1) AND ($2::text IS NULL OR courier_id=$2) AND ($3::uuid IS NULL OR id=$3)",
+          [owner, courier, selected],
         )
       ).rows[0];
       const rows = (
         await tx.query(
           commercialReturnSelect +
-            " WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2) ORDER BY (r.status NOT IN ('rejected','cancelled','received')) DESC,r.created_at DESC,r.id LIMIT 50",
-          [owner, courier],
+            " WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2) AND ($3::uuid IS NULL OR r.id=$3) ORDER BY (r.status NOT IN ('rejected','cancelled','received')) DESC,r.created_at DESC,r.id LIMIT 50",
+          [owner, courier, selected],
         )
       ).rows;
       const history = (
         await tx.query(
           `SELECT * FROM (
-          SELECT e.id,e.return_id AS "returnId",e.action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM commercial_return_events e JOIN commercial_returns r ON r.id=e.return_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2)
-          UNION ALL SELECT e.id,e.refund_id AS "returnId",'refund.'||e.action AS action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM customer_refund_events e JOIN commercial_returns r ON r.id=e.refund_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND $2::text IS NULL
+          SELECT e.id,e.return_id AS "returnId",e.action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM commercial_return_events e JOIN commercial_returns r ON r.id=e.return_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND ($2::text IS NULL OR r.courier_id=$2) AND ($3::uuid IS NULL OR r.id=$3)
+          UNION ALL SELECT e.id,e.refund_id AS "returnId",'refund.'||e.action AS action,e.actor_name AS "actorName",e.reference,e.reason,e.created_at AS "createdAt" FROM customer_refund_events e JOIN commercial_returns r ON r.id=e.refund_id WHERE ($1::text IS NULL OR r.merchant_id=$1) AND $2::text IS NULL AND ($3::uuid IS NULL OR r.id=$3)
           ) h ORDER BY "createdAt" DESC,id LIMIT 30`,
-          [owner, courier],
+          [owner, courier, selected],
         )
       ).rows;
       const couriers =

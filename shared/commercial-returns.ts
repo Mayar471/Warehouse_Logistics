@@ -4,6 +4,8 @@ export interface CommercialReturn {
   id: string;
   shipmentId: string;
   shipmentReference: string;
+  recipientName: string;
+  updatedAt: string;
   merchantId: string;
   merchantName: string;
   status:

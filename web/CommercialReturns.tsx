@@ -30,9 +30,13 @@ const actionLabels: Record<ReturnAction, string> = {
 export function CommercialReturns({
   account,
   couriers,
+  focusId,
+  onChanged,
 }: {
   account: Account;
   couriers: Courier[];
+  focusId?: string;
+  onChanged?: () => Promise<void>;
 }) {
   const [view, setView] = useState<CommercialReturnView | null>(null),
     [target, setTarget] = useState<{ row: CommercialReturn; action: ReturnAction } | null>(null),
@@ -48,8 +52,13 @@ export function CommercialReturns({
     submitting = useRef(false),
     form = useRef<HTMLFormElement>(null);
   const load = useCallback(
-    async () => setView(await api<CommercialReturnView>('/api/commercial-returns')),
-    [],
+    async () =>
+      setView(
+        await api<CommercialReturnView>(
+          '/api/commercial-returns' + (focusId ? '?returnId=' + encodeURIComponent(focusId) : ''),
+        ),
+      ),
+    [focusId],
   );
   useEffect(() => {
     void load().catch((e) => setError(e.message));
@@ -65,7 +74,9 @@ export function CommercialReturns({
       if (stopped || inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
       try {
-        const next = await api<CommercialReturnView>('/api/commercial-returns');
+        const next = await api<CommercialReturnView>(
+          '/api/commercial-returns' + (focusId ? '?returnId=' + encodeURIComponent(focusId) : ''),
+        );
         if (!stopped) setView(next);
       } catch {
         /* Retain the last confirmed view on background failures. */
@@ -77,7 +88,7 @@ export function CommercialReturns({
       stopped = true;
       clearInterval(timer);
     };
-  }, [target, busy, uncertain]);
+  }, [target, busy, uncertain, focusId]);
   const recovery = useFinancialRecovery(account.id);
   const locked = busy || uncertain;
   function open(row: CommercialReturn, action: ReturnAction) {
@@ -114,6 +125,7 @@ export function CommercialReturns({
       setTarget(null);
       try {
         await load();
+        await onChanged?.();
       } catch {
         setView(null);
         setError('حُفظ القرار؛ حدّث المرتجعات لقراءة النتيجة.');
@@ -154,16 +166,18 @@ export function CommercialReturns({
           await load();
         }}
       />
-      <section className="inventory-intro">
-        <div>
-          <span className="eyebrow">إرجاع موثّق من العميل حتى منشأ الطلب</span>
-          <h2>مرتجعات العملاء</h2>
-          <p>
-            تابع القرار وإسناد الاستلام والعهدة حتى وصول البضاعة للمنشأ. تُعزل الكميات المستلمة
-            للفحص قبل إتاحتها للبيع. رد نقد العميل يتطلب اعتمادًا وتمويلًا وإقرار استلام مستقلًا.
-          </p>
-        </div>
-      </section>
+      {!focusId && (
+        <section className="inventory-intro">
+          <div>
+            <span className="eyebrow">إرجاع موثّق من العميل حتى منشأ الطلب</span>
+            <h2>مرتجعات العملاء</h2>
+            <p>
+              تابع القرار وإسناد الاستلام والعهدة حتى وصول البضاعة للمنشأ. تُعزل الكميات المستلمة
+              للفحص قبل إتاحتها للبيع. رد نقد العميل يتطلب اعتمادًا وتمويلًا وإقرار استلام مستقلًا.
+            </p>
+          </div>
+        </section>
+      )}
       <div className="transfer-toolbar">
         <span>{view ? `${view.total} طلبات إرجاع في نطاقك` : 'جارٍ قراءة المرتجعات…'}</span>
         <button
@@ -174,7 +188,7 @@ export function CommercialReturns({
           تحديث المرتجعات
         </button>
       </div>
-      {view && (
+      {view && !focusId && (
         <div className="cash-metrics">
           {[
             ['بانتظار مراجعة المتجر', view.requested],
@@ -415,7 +429,9 @@ export function CommercialReturns({
       </div>
       {view?.total === 0 && (
         <section className="panel transfer-empty">
-          <h3>لا توجد طلبات إرجاع في نطاقك</h3>
+          <h3>
+            {focusId ? 'لم تعد المهمة ظاهرة ضمن إسناد هذا الحساب' : 'لا توجد طلبات إرجاع في نطاقك'}
+          </h3>
           <p>تظهر طلبات العملاء هنا بعد استلامهم الطلب وطلب إرجاعه من متجر التجربة.</p>
         </section>
       )}

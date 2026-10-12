@@ -26,6 +26,20 @@ test('commercial return request and merchant review preserve delivery, stock and
     assert.deepEqual((await f.post(path, request, 'shop', key)).json(), r);
     assert.equal((await f.post(path, request, 'shop')).statusCode, 409);
     assert.equal((await f.get('/api/commercial-returns', 'merchant-b')).json().total, 0);
+    const focused = (await f.get(`/api/commercial-returns?returnId=${r.id}`, 'merchant-a')).json();
+    assert.equal(focused.total, 1);
+    assert.equal(focused.rows[0].recipientName, f.shipment().recipientName);
+    assert.ok(Number.isFinite(new Date(focused.rows[0].updatedAt).getTime()));
+    assert.ok(focused.history.every((e: { returnId: string }) => e.returnId === r.id));
+    assert.equal(
+      (await f.get(`/api/commercial-returns?returnId=${r.id}`, 'merchant-b')).json().total,
+      0,
+    );
+    assert.equal(
+      (await f.get(`/api/commercial-returns?returnId=${r.id}`, 'courier-b')).json().total,
+      0,
+    );
+    assert.equal((await f.get('/api/commercial-returns?returnId=invalid')).statusCode, 422);
     const actionPath = `/api/commercial-returns/${r.id}/actions`;
     const review = {
       action: 'approve',

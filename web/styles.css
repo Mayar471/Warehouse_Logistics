@@ -3407,57 +3407,34 @@ fieldset.action-panel {
   background: #34816a;
   border-color: #34816a;
 }
-.courier-return-tasks {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 22px;
-  margin-bottom: 22px;
-  border-color: #cce2db;
-  background: linear-gradient(110deg, #f2faf7, #fff);
+
+.courier-return-row {
+  background: #f7fbf9;
 }
-.courier-return-copy {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  min-width: 0;
-}
-.courier-return-icon {
-  display: grid;
-  place-items: center;
-  padding: 12px;
-  border-radius: 14px;
+.task-kind {
   color: #087d70;
-  background: #e1f1eb;
-  flex-shrink: 0;
+  font-weight: 700;
 }
-.courier-return-copy h2 {
-  font-size: 18px;
-  color: #17373a;
-  margin: 0 0 7px;
-}
-.courier-return-copy p {
-  color: #285f55;
-  font-size: 14px;
-  margin: 0 0 6px;
-}
-.courier-return-copy small {
-  color: #657c7a;
-  line-height: 1.9;
+.courier-tasks td:nth-child(4) small {
+  white-space: normal;
+  max-width: 180px;
+  line-height: 1.8;
 }
 @media (max-width: 760px) {
-  .courier-return-tasks {
-    align-items: stretch;
-    flex-direction: column;
-    padding: 18px;
-    gap: 16px;
+  .courier-tasks tr {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .courier-return-tasks .button-row {
-    width: 100%;
+  .courier-tasks .status {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.6;
   }
-  .courier-return-tasks .button.primary {
-    flex: 1;
-    justify-content: center;
+  .courier-tasks td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .courier-tasks .reference-button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 }
