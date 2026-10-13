@@ -40,6 +40,8 @@ export interface Account {
   courierId: string | null;
 }
 export interface Courier {
+  rating?: number | null;
+  ratingCount?: number;
   id: string;
   name: string;
   vehicle: string;
@@ -48,6 +50,10 @@ export interface Courier {
   available: boolean;
 }
 export interface Site {
+  rating?: number | null;
+  ratingCount?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   version: number;
   pickupEnabled: boolean;
   pickupCapacityKg: number;
@@ -60,6 +66,8 @@ export interface Site {
   merchantId: string | null;
 }
 export interface Shipment {
+  deliveryCourier?: { id: string; name: string } | null;
+  deliveryLocation?: import('./customer-locations.js').Coordinates | null;
   collection: import('./cash.js').Collection | null;
   originHandoverRequired: boolean;
   originPrepared: boolean;

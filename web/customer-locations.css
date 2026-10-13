@@ -1,0 +1,189 @@
+.customer-locations {
+  padding: 22px 0;
+  border-block: 1px solid #e1d2e3;
+  margin: 18px 0;
+  display: grid;
+  gap: 16px;
+}
+.customer-locations h3,
+.service-ratings h3 {
+  font-size: 19px;
+  margin: 0;
+}
+.address-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.address-options button {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  color: #78527a;
+  border: 1px solid #ddcde0;
+  border-radius: 14px;
+  background: #fcf8fd;
+  font: inherit;
+  min-height: 98px;
+}
+.address-options button[aria-pressed='true'],
+.pickup-recommendations button[aria-pressed='true'] {
+  border-color: #762557;
+  background: #f0e3f1;
+  box-shadow: inset 0 0 0 1px #762557;
+  color: #56254d;
+}
+.address-options small {
+  font-size: 11px;
+  color: #806786;
+}
+.address-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.address-editor label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.address-editor small {
+  grid-column: 1/-1;
+  color: #806786;
+  line-height: 1.8;
+}
+.selected-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #67406d;
+  background: #f5edf7;
+  padding: 14px;
+  border-radius: 12px;
+  line-height: 1.8;
+}
+.saved-custom,
+.location-actions button,
+.location-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid #dccbdf;
+  border-radius: 10px;
+  color: #704575;
+  background: #fff;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 13px;
+}
+.location-actions,
+.location-mode {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.location-mode button[aria-pressed='true'] {
+  background: #762557;
+  color: #fff;
+}
+.address-map-shell {
+  border: 1px solid #e0d3e4;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-block: 12px;
+  background: #fcf8fd;
+  min-width: 0;
+}
+.address-map {
+  height: 280px;
+  z-index: 0;
+  direction: ltr;
+  background: #ece5ef;
+}
+.address-map-shell p,
+.address-map-shell small {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #76597d;
+  line-height: 1.8;
+  display: block;
+}
+.pickup-recommendations {
+  display: grid;
+  gap: 10px;
+}
+.pickup-recommendations button {
+  text-align: start;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid #decee1;
+  background: #fff;
+  color: #634068;
+  font: inherit;
+}
+.pickup-recommendations small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #806786;
+  flex-wrap: wrap;
+}
+.service-ratings {
+  background: #faf6fb;
+  border: 1px solid #e0d0e3;
+  border-radius: 16px;
+  padding: 22px;
+  margin-block: 20px;
+  display: grid;
+  gap: 14px;
+}
+.service-ratings > p {
+  color: #806786;
+  font-size: 13px;
+}
+.service-ratings > div {
+  padding: 14px 0;
+  border-top: 1px solid #e7dcea;
+  display: grid;
+  gap: 10px;
+}
+.rating-stars {
+  display: flex;
+  gap: 6px;
+}
+.rating-stars button {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #f0e5f2;
+  color: #762557;
+  display: grid;
+  place-items: center;
+}
+.customer-locations button:focus-visible,
+.service-ratings button:focus-visible {
+  outline: 3px solid #995789;
+  outline-offset: 3px;
+}
+@media (max-width: 650px) {
+  .address-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .address-editor {
+    grid-template-columns: 1fr;
+  }
+  .customer-locations {
+    padding-block: 16px;
+  }
+  .address-map {
+    height: 250px;
+  }
+  .service-ratings {
+    padding: 16px;
+  }
+}

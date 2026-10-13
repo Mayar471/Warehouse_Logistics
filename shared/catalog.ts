@@ -74,6 +74,7 @@ export interface StoreCheckout {
   items: CartItem[];
 }
 export interface StoreOrder {
+  ratings?: import('./customer-locations.js').ServiceRating[];
   commercialReturn?: import('./commercial-returns.js').CommercialReturn | null;
   checkoutId: string;
   items: CartItem[];

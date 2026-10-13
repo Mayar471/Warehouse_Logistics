@@ -1,5 +1,10 @@
 import { registerCustomerRefunds } from './customer-refunds.js';
 import { registerNotifications } from './notifications.js';
+import {
+  registerCustomerLocations,
+  coordinatesSchema,
+  pickupOptionsSql,
+} from './customer-locations.js';
 import { commercialReturnSelect, returnEvent } from './commercial-returns.js';
 import type { CommercialReturn } from '../shared/commercial-returns.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -51,6 +56,7 @@ export function registerStorefront(
   }
   registerCustomerRefunds(app, write, owner, options.clock ?? Date.now);
   registerNotifications(app, write, owner, '/api/storefront/notifications');
+  registerCustomerLocations(app, write, owner);
   app.post('/api/storefront/session', async (req, reply) => {
     guard(req);
     if (!req.cookies.shop || !/^[a-f0-9]{64}$/.test(req.cookies.shop))
@@ -60,11 +66,7 @@ export function registerStorefront(
         path: '/',
         maxAge: 60 * 60 * 24 * 7,
       });
-    const pickupSites = (
-      await db.query(
-        "SELECT id,name,address FROM sites WHERE kind='pickup' AND pickup_enabled AND city='دمشق' ORDER BY name",
-      )
-    ).rows;
+    const pickupSites = (await db.query(pickupOptionsSql + ' ORDER BY s.name')).rows;
     return {
       catalog,
       merchant: 'بيت الشام',
@@ -92,6 +94,7 @@ export function registerStorefront(
         recipientName: z.string().trim().min(2).max(80),
         district: z.enum(['الروضة', 'المزة', 'المالكي', 'الصالحية', 'كفرسوسة', 'أبو رمانة']),
         address: z.string().trim().min(5).max(130),
+        location: coordinatesSchema.optional(),
       })
       .strict()
       .parse(req.body);
@@ -109,7 +112,19 @@ export function registerStorefront(
       subtotalMinor += product.priceMinor * item.quantity;
       weightKg += product.weightKg * item.quantity;
     }
-    let destination = `${body.district}، ${body.address}، دمشق`;
+    let destination = body.location
+      ? `${body.address}، دمشق`
+      : `${body.district}، ${body.address}، دمشق`;
+    if (body.location && !body.pickupSiteId)
+      assert(
+        body.location.latitude >= 33.35 &&
+          body.location.latitude <= 33.7 &&
+          body.location.longitude >= 36.05 &&
+          body.location.longitude <= 36.5,
+        422,
+        'OUTSIDE_COVERAGE',
+        'الموقع خارج تغطية تجربة دمشق الحالية؛ اختر عنوانًا داخل التغطية',
+      );
     if (body.pickupSiteId) {
       const point = (
         await db.query<{ address: string; city: string }>(
@@ -135,8 +150,15 @@ export function registerStorefront(
         weightKg: Math.round(weightKg * 100) / 100,
       });
       await tx.query(
-        'INSERT INTO storefront_checkouts(id,owner_hash,quote_id,items,subtotal_minor,inventory_required) VALUES($1,$2,$3,$4,$5,true)',
-        [id, ownerHash, quote.id, JSON.stringify(body.items), subtotalMinor],
+        'INSERT INTO storefront_checkouts(id,owner_hash,quote_id,items,subtotal_minor,inventory_required,delivery_location) VALUES($1,$2,$3,$4,$5,true,$6)',
+        [
+          id,
+          ownerHash,
+          quote.id,
+          JSON.stringify(body.items),
+          subtotalMinor,
+          body.pickupSiteId ? null : body.location ? JSON.stringify(body.location) : null,
+        ],
       );
       return {
         id,
@@ -156,6 +178,7 @@ export function registerStorefront(
       quote_id: string;
       items: StoreCheckout['items'];
       subtotal_minor: number;
+      delivery_location: import('../shared/customer-locations.js').Coordinates | null;
     }>('SELECT * FROM storefront_checkouts WHERE id=$1 AND owner_hash=$2', [checkoutId, ownerHash]);
     const checkout = result.rows[0];
     assert(checkout, 404, 'CHECKOUT_NOT_FOUND', 'عرض الطلب غير موجود');
@@ -166,7 +189,7 @@ export function registerStorefront(
       payload: { quoteId: checkout.quote_id },
     });
     if (response.statusCode !== 200) return reply.code(response.statusCode).send(response.json());
-    const shipment = response.json();
+    const shipment = { ...response.json(), deliveryLocation: checkout.delivery_location ?? null };
     // Recoverable linkage: retry uses the same fulfillment key even if this update failed.
     await write((tx) =>
       tx.query('UPDATE storefront_checkouts SET shipment_id=$1 WHERE id=$2 AND owner_hash=$3', [
@@ -200,6 +223,12 @@ export function registerStorefront(
         orders: await Promise.all(
           result.rows.map(async (row) => ({
             commercialReturn: byShipment.get(row.shipment_id) ?? null,
+            ratings: (
+              await tx.query(
+                'SELECT kind,score,comment FROM service_ratings WHERE shipment_id=$1 AND owner_hash=$2',
+                [row.shipment_id, ownerHash],
+              )
+            ).rows,
             checkoutId: row.id,
             items: row.items,
             subtotalMinor: row.subtotal_minor,

@@ -44,13 +44,21 @@ export async function loadShipment(tx: Transaction, id: string) {
   return result.rows[0];
 }
 export async function mapShipment(tx: Transaction, row: ShipmentRow): Promise<Shipment> {
-  const names = await tx.query<{ merchant: string; origin: string; courier: string | null }>(
-    `SELECT m.name merchant,s.name origin,c.name courier FROM merchants m JOIN sites s ON s.id=$2
+  const names = await tx.query<{
+    merchant: string;
+    origin: string;
+    courier: string | null;
+    location: import('../shared/customer-locations.js').Coordinates | null;
+    deliveredBy: { id: string; name: string } | null;
+  }>(
+    `SELECT m.name merchant,s.name origin,c.name courier,(SELECT jsonb_build_object('id',c2.id,'name',c2.name) FROM delivery_service_subjects d JOIN couriers c2 ON c2.id=d.courier_id WHERE d.shipment_id=$4) AS "deliveredBy",(SELECT delivery_location FROM storefront_checkouts WHERE shipment_id=$4 LIMIT 1) location FROM merchants m JOIN sites s ON s.id=$2
      LEFT JOIN couriers c ON c.id=$3 WHERE m.id=$1`,
-    [row.merchant_id, row.origin_id, row.courier_id],
+    [row.merchant_id, row.origin_id, row.courier_id, row.id],
   );
   const n = names.rows[0];
   return {
+    deliveryLocation: n.location,
+    deliveryCourier: n.deliveredBy,
     originHandoverRequired: row.origin_handover_required,
     collection: await collection(tx, row.id),
     originPrepared: row.origin_prepared,
@@ -750,6 +758,11 @@ export async function applyAction(
     description = 'أكد المتجر تجهيز كميات الطلب المحجوزة وإغلاق الطرد؛ توقف انتهاء الحجز';
   if (hasInventory && action === 'receive_return')
     description = 'استُلم المرتجع في المنشأ وأضيف إلى المخزون المعزول؛ غير متاح للبيع قبل الفحص';
+  if (['receive_pickup', 'deliver'].includes(action) && row.courier_id)
+    await tx.query(
+      'INSERT INTO delivery_service_subjects(shipment_id,courier_id,pickup_site_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+      [row.id, row.courier_id, row.pickup_site_id],
+    );
   await tx.query(
     'UPDATE shipments SET status=$1,courier_id=$2,assignment_accepted=$3,version=version+1,updated_at=$4,assignment_expires_at=$6,custody_site_id=$7,pickup_expires_at=$8,origin_prepared=$9,origin_released=$10,origin_received=$11,pickup_due_at=$12,pickup_overdue=$13 WHERE id=$5',
     [

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import type { Coordinates } from '../shared/customer-locations.js';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommercialReturns } from './CommercialReturns.js';
 import { Notifications, focusNotificationTarget } from './Notifications.js';
 import { QuickChoices, ReferenceInput, FullAmount } from './QuickInput.js';
@@ -64,6 +65,7 @@ import {
   type Site,
 } from '../shared/contracts.js';
 
+const AddressMap = lazy(() => import('./AddressMap.js'));
 const fmt = new Intl.NumberFormat('ar-SY');
 const date = (s: string) =>
   new Intl.DateTimeFormat('ar-SY', { hour: '2-digit', minute: '2-digit' }).format(new Date(s));
@@ -1941,6 +1943,19 @@ function ShipmentDetails({
           )}
           <div className="detail-grid">
             <section>
+              {s!.deliveryLocation && (
+                <div className="detail-card">
+                  <h3>موقع تسليم العميل</h3>
+                  <a
+                    className="button secondary"
+                    href={`https://www.openstreetmap.org/?mlat=${s!.deliveryLocation.latitude}&mlon=${s!.deliveryLocation.longitude}#map=17/${s!.deliveryLocation.latitude}/${s!.deliveryLocation.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    فتح موقع التسليم على الخريطة
+                  </a>
+                </div>
+              )}
               <div className="detail-card">
                 <h3>
                   <Package size={18} />
@@ -2173,6 +2188,13 @@ function Network({
               </span>
               <div>
                 <strong>{s.name}</strong>
+                {s.kind === 'pickup' && (
+                  <small>
+                    {s.ratingCount
+                      ? `★ ${s.rating} / 5 · ${s.ratingCount} تقييم`
+                      : 'لا توجد تقييمات بعد'}
+                  </small>
+                )}
                 <p>{s.address}</p>
                 {s.kind === 'pickup' && (
                   <>
@@ -2236,6 +2258,11 @@ function Network({
                   <span className="avatar">{c.name.charAt(0)}</span>
                   <div>
                     <strong>{c.name}</strong>
+                    <small>
+                      {c.ratingCount
+                        ? `★ ${c.rating} / 5 · ${c.ratingCount} تقييم`
+                        : 'لا توجد تقييمات بعد'}
+                    </small>
                     <small>{c.vehicle}</small>
                   </div>
                 </div>
@@ -2320,6 +2347,11 @@ function PickupSiteEditor({
   onSaved: () => Promise<void>;
 }) {
   const existing = site === 'new' ? null : site;
+  const [location, setLocation] = useState<Coordinates | null>(
+    existing?.latitude != null && existing.longitude != null
+      ? { latitude: existing.latitude, longitude: existing.longitude }
+      : null,
+  );
   const [form, setForm] = useState({
     name: existing?.name ?? '',
     address: existing?.address ?? '',
@@ -2344,6 +2376,7 @@ function PickupSiteEditor({
       const body = JSON.stringify({
         ...form,
         capacityKg: Number(form.capacityKg),
+        location,
         ...(existing ? { expectedVersion: existing.version } : {}),
       });
       if (pending.current?.body !== body) pending.current = { body, key: key() };
@@ -2403,6 +2436,13 @@ function PickupSiteEditor({
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
           </label>
+          <div className="span-two">
+            <h3>موقع نقطة الاستلام</h3>
+            <p className="muted">حدد مكان النقطة لتظهر ضمن اقتراح الأقرب للعميل.</p>
+            <Suspense fallback={<p>جارٍ تحميل الخريطة…</p>}>
+              <AddressMap point={location} onChange={setLocation} />
+            </Suspense>
+          </div>
           <label>
             السعة القصوى بالكيلوغرام
             <input

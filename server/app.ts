@@ -353,11 +353,17 @@ export function buildApp(
       vehicle: string;
       capacity_kg: number;
       available: boolean;
-    }>('SELECT * FROM couriers ORDER BY id');
+      rating: number | null;
+      ratingCount: number;
+    }>(
+      'SELECT c.*,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM couriers c LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind=\'courier\' GROUP BY subject_id) r ON r.subject_id=c.id ORDER BY c.id',
+    );
     const couriers: Courier[] = [];
     if (a.role === 'operator')
       for (const c of cs.rows)
         couriers.push({
+          rating: c.rating,
+          ratingCount: c.ratingCount,
           id: c.id,
           name: c.name,
           vehicle: c.vehicle,
@@ -383,8 +389,12 @@ export function buildApp(
       version: number;
       pickup_enabled: boolean;
       pickup_capacity_kg: number;
+      latitude: number | null;
+      longitude: number | null;
+      rating: number | null;
+      ratingCount: number;
     }>(
-      siteSql,
+      `SELECT s.*,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM (${siteSql}) s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id`,
       a.role === 'merchant'
         ? [a.merchantId]
         : a.role === 'courier'
@@ -400,6 +410,10 @@ export function buildApp(
     ).rows;
     const reservedBySite = new Map(reserved.map((row) => [row.id, row.kg]));
     const sites = siteResult.rows.map((s) => ({
+      latitude: s.latitude,
+      longitude: s.longitude,
+      rating: s.rating,
+      ratingCount: s.ratingCount,
       version: s.version,
       pickupEnabled: s.pickup_enabled,
       pickupCapacityKg: s.pickup_capacity_kg,

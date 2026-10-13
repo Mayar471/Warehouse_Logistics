@@ -471,6 +471,18 @@ export async function openDatabase(path?: string) {
     END IF; END $$;
     CREATE TABLE IF NOT EXISTS notification_reads(audience text NOT NULL,notification_id text NOT NULL,read_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(audience,notification_id));
     INSERT INTO schema_migrations(version) VALUES(22) ON CONFLICT DO NOTHING;
+    ALTER TABLE sites ADD COLUMN IF NOT EXISTS latitude double precision CHECK(latitude BETWEEN -85 AND 85);
+    ALTER TABLE sites ADD COLUMN IF NOT EXISTS longitude double precision CHECK(longitude BETWEEN -180 AND 180);
+    CREATE TABLE IF NOT EXISTS customer_addresses(id uuid PRIMARY KEY,owner_hash text NOT NULL,label text NOT NULL CHECK(label IN ('home','work','custom')),name text NOT NULL,district text NOT NULL,details text NOT NULL,latitude double precision NOT NULL CHECK(latitude BETWEEN -85 AND 85),longitude double precision NOT NULL CHECK(longitude BETWEEN -180 AND 180),version integer NOT NULL DEFAULT 1);
+    CREATE INDEX IF NOT EXISTS customer_address_owner ON customer_addresses(owner_hash);
+    CREATE UNIQUE INDEX IF NOT EXISTS customer_named_address ON customer_addresses(owner_hash,label) WHERE label<>'custom';
+    ALTER TABLE storefront_checkouts ADD COLUMN IF NOT EXISTS delivery_location jsonb;
+    CREATE TABLE IF NOT EXISTS service_ratings(id uuid PRIMARY KEY,owner_hash text NOT NULL,shipment_id uuid NOT NULL REFERENCES shipments(id),kind text NOT NULL CHECK(kind IN ('courier','pickup')),subject_id text NOT NULL,score integer NOT NULL CHECK(score BETWEEN 1 AND 5),comment text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(shipment_id,kind));
+    CREATE TABLE IF NOT EXISTS delivery_service_subjects(shipment_id uuid PRIMARY KEY REFERENCES shipments(id),courier_id text NOT NULL REFERENCES couriers(id),pickup_site_id text REFERENCES sites(id));
+    CREATE INDEX IF NOT EXISTS service_rating_subject ON service_ratings(kind,subject_id);
+    INSERT INTO schema_migrations(version) VALUES(23) ON CONFLICT DO NOTHING;
+    CREATE OR REPLACE FUNCTION protect_service_rating() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RAISE EXCEPTION 'Verified service history is immutable' USING ERRCODE='23514'; END $f$;
+    DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='service_rating_immutable') THEN CREATE TRIGGER service_rating_immutable BEFORE UPDATE OR DELETE ON service_ratings FOR EACH ROW EXECUTE FUNCTION protect_service_rating(); END IF; IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='delivery_subject_immutable') THEN CREATE TRIGGER delivery_subject_immutable BEFORE UPDATE OR DELETE ON delivery_service_subjects FOR EACH ROW EXECUTE FUNCTION protect_service_rating(); END IF; END $$;
     CREATE TABLE IF NOT EXISTS delivery_proofs (shipment_id uuid PRIMARY KEY REFERENCES shipments(id),code_hash text NOT NULL,expires_at timestamptz NOT NULL,issued_at timestamptz NOT NULL,attempts integer NOT NULL DEFAULT 0,consumed_at timestamptz);
     CREATE TABLE IF NOT EXISTS demo_settings (id integer PRIMARY KEY CHECK(id=1), webhook_paused boolean NOT NULL DEFAULT false);
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;

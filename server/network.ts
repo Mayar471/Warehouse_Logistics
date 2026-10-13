@@ -4,6 +4,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
 import { assert, idempotent, transactionGate } from './domain.js';
+import { coordinatesSchema } from './customer-locations.js';
 
 export function registerNetwork(
   app: FastifyInstance,
@@ -17,6 +18,7 @@ export function registerNetwork(
     capacityKg: z.number().finite().min(1).max(10000),
     enabled: z.boolean(),
     reason: z.string().trim().min(3).max(240),
+    location: coordinatesSchema.nullable().optional(),
   };
   const key = (req: FastifyRequest) =>
     z.string().min(8).max(128).parse(req.headers['idempotency-key']);
@@ -44,8 +46,16 @@ export function registerNetwork(
         assert(count < 100, 409, 'SITE_LIMIT', 'حد العرض المحلي هو 100 نقطة استلام');
         const id = 'point-' + randomBytes(8).toString('hex');
         await tx.query(
-          "INSERT INTO sites(id,name,city,address,kind,merchant_id,pickup_enabled,pickup_capacity_kg) VALUES($1,$2,'دمشق',$3,'pickup',NULL,$4,$5)",
-          [id, body.name, body.address, body.enabled, body.capacityKg],
+          "INSERT INTO sites(id,name,city,address,kind,merchant_id,pickup_enabled,pickup_capacity_kg,latitude,longitude) VALUES($1,$2,'دمشق',$3,'pickup',NULL,$4,$5,$6,$7)",
+          [
+            id,
+            body.name,
+            body.address,
+            body.enabled,
+            body.capacityKg,
+            body.location?.latitude ?? null,
+            body.location?.longitude ?? null,
+          ],
         );
         await tx.query(
           'INSERT INTO network_audit(id,site_id,actor_name,action,reason,details) VALUES($1,$2,$3,$4,$5,$6)',
@@ -83,6 +93,8 @@ export function registerNetwork(
             version: number;
             pickup_capacity_kg: number;
             pickup_enabled: boolean;
+            latitude: number | null;
+            longitude: number | null;
           }>("SELECT * FROM sites WHERE id=$1 AND kind='pickup'", [id])
         ).rows[0];
         assert(site, 404, 'NOT_FOUND', 'نقطة الاستلام غير موجودة');
@@ -110,9 +122,27 @@ export function registerNetwork(
           'ACTIVE_SITE_ADDRESS',
           'لا يمكن تغيير عنوان نقطة لها طرود نشطة أو طلبات في الطريق',
         );
+        assert(
+          body.location === undefined ||
+            site.latitude === null ||
+            active.count === 0 ||
+            (body.location?.latitude === site.latitude &&
+              body.location?.longitude === site.longitude),
+          409,
+          'ACTIVE_SITE_LOCATION',
+          'لا يمكن نقل دبوس نقطة لها طرود نشطة؛ يمكن توثيق موقعها لأول مرة',
+        );
         await tx.query(
-          'UPDATE sites SET name=$2,address=$3,pickup_capacity_kg=$4,pickup_enabled=$5,version=version+1 WHERE id=$1',
-          [id, body.name, body.address, body.capacityKg, body.enabled],
+          'UPDATE sites SET name=$2,address=$3,pickup_capacity_kg=$4,pickup_enabled=$5,version=version+1,latitude=$6,longitude=$7 WHERE id=$1',
+          [
+            id,
+            body.name,
+            body.address,
+            body.capacityKg,
+            body.enabled,
+            body.location === undefined ? site.latitude : (body.location?.latitude ?? null),
+            body.location === undefined ? site.longitude : (body.location?.longitude ?? null),
+          ],
         );
         await tx.query(
           'INSERT INTO network_audit(id,site_id,actor_name,action,reason,details) VALUES($1,$2,$3,$4,$5,$6)',

@@ -1,3 +1,6 @@
+import { CustomerLocations } from './CustomerLocations.js';
+import { ServiceRatings } from './ServiceRatings.js';
+import type { Coordinates, PickupOption } from '../shared/customer-locations.js';
 import { CustomerReturn } from './CustomerReturn.js';
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -100,7 +103,7 @@ const icons = {
 };
 let shopSession:
   | Promise<{
-      pickupSites: { id: string; name: string; address: string }[];
+      pickupSites: PickupOption[];
       availability: { productId: string; available: number }[];
     }>
   | undefined;
@@ -174,9 +177,7 @@ export function Storefront() {
     setStock(Object.fromEntries(result.availability.map((p) => [p.productId, p.available])));
     setStockStale(false);
   }
-  const [pickupSites, setPickupSites] = useState<{ id: string; name: string; address: string }[]>(
-    [],
-  );
+  const [pickupSites, setPickupSites] = useState<PickupOption[]>([]);
   const [deliveryMode, setDeliveryMode] = useState<'home' | 'pickup'>('home');
   const [paymentMode, setPaymentMode] = useState<'none' | 'cod'>('none');
   const [pickupSiteId, setPickupSiteId] = useState('');
@@ -202,6 +203,7 @@ export function Storefront() {
       setIssuing(null);
     }
   }
+  const [deliveryLocation, setDeliveryLocation] = useState<Coordinates | null>(null);
   const [address, setAddress] = useState({ recipientName: '', district: 'الروضة', address: '' });
   const submitting = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -305,6 +307,10 @@ export function Storefront() {
       setError('اكتب عنوانًا واضحًا من خمسة أحرف على الأقل.');
       return;
     }
+    if (deliveryMode === 'pickup' && !pickupSiteId) {
+      setError('اختر نقطة استلام أولًا.');
+      return;
+    }
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
@@ -317,6 +323,7 @@ export function Storefront() {
             items: cart,
             paymentMode,
             ...address,
+            ...(deliveryMode === 'home' && deliveryLocation ? { location: deliveryLocation } : {}),
             ...(deliveryMode === 'pickup'
               ? {
                   pickupSiteId,
@@ -513,6 +520,7 @@ export function Storefront() {
         )}
       </div>
       <CustomerReturn order={order} onChanged={refreshOrders} />
+      <ServiceRatings order={order} onChanged={refreshOrders} />
       {order.shipment.status === 'in_transit' && <LocationSharing shipment={order.shipment} />}
       {((!order.shipment.pickupSiteId && order.shipment.status === 'in_transit') ||
         (order.shipment.pickupSiteId &&
@@ -1191,64 +1199,27 @@ export function Storefront() {
                           </span>
                         </label>
                       </fieldset>
-                      {deliveryMode === 'pickup' ? (
-                        <label>
-                          نقطة الاستلام
-                          <select
-                            aria-label="نقطة الاستلام"
-                            value={pickupSiteId}
-                            onChange={(e) => setPickupSiteId(e.target.value)}
-                          >
-                            {pickupSites.map((point) => (
-                              <option key={point.id} value={point.id}>
-                                {point.name} · {point.address}
-                              </option>
-                            ))}
-                          </select>
-                          <small>يظهر رمز الاستلام في طلباتي بعد تأكيد وصول الطرد للنقطة.</small>
-                        </label>
-                      ) : (
-                        <>
-                          <div className="shop-fields">
-                            <label>
-                              المدينة
-                              <input value="دمشق" readOnly />
-                            </label>
-                            <label>
-                              الحي
-                              <select
-                                value={address.district}
-                                onChange={(e) =>
-                                  setAddress({ ...address, district: e.target.value })
-                                }
-                              >
-                                {[
-                                  'الروضة',
-                                  'المزة',
-                                  'المالكي',
-                                  'الصالحية',
-                                  'كفرسوسة',
-                                  'أبو رمانة',
-                                ].map((d) => (
-                                  <option key={d}>{d}</option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                          <label>
-                            العنوان بالتفصيل
-                            <input
-                              autoComplete="street-address"
-                              required
-                              minLength={5}
-                              maxLength={130}
-                              value={address.address}
-                              onChange={(e) => setAddress({ ...address, address: e.target.value })}
-                              placeholder="الشارع، البناء، الطابق، وعلامة مميزة"
-                            />
-                          </label>
-                        </>
-                      )}
+                      <CustomerLocations
+                        key={deliveryMode}
+                        pickup={deliveryMode === 'pickup'}
+                        points={pickupSites}
+                        selectedPoint={pickupSiteId}
+                        initial={
+                          deliveryMode === 'home'
+                            ? {
+                                district: address.district,
+                                details: address.address,
+                                point: deliveryLocation,
+                              }
+                            : undefined
+                        }
+                        onPoint={setPickupSiteId}
+                        onAddress={(district, details, point) => {
+                          setAddress((current) => ({ ...current, district, address: details }));
+                          setDeliveryLocation(point);
+                          setQuote(null);
+                        }}
+                      />
                       <p className="shop-field-note">
                         التجربة الحالية للتوصيل داخل دمشق. استخدم بيانات اصطناعية للعرض.
                       </p>
