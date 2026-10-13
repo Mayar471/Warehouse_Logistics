@@ -469,6 +469,8 @@ export async function openDatabase(path?: string) {
       END $f$;
       INSERT INTO schema_migrations(version) VALUES(21);
     END IF; END $$;
+    CREATE TABLE IF NOT EXISTS notification_reads(audience text NOT NULL,notification_id text NOT NULL,read_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(audience,notification_id));
+    INSERT INTO schema_migrations(version) VALUES(22) ON CONFLICT DO NOTHING;
     CREATE TABLE IF NOT EXISTS delivery_proofs (shipment_id uuid PRIMARY KEY REFERENCES shipments(id),code_hash text NOT NULL,expires_at timestamptz NOT NULL,issued_at timestamptz NOT NULL,attempts integer NOT NULL DEFAULT 0,consumed_at timestamptz);
     CREATE TABLE IF NOT EXISTS demo_settings (id integer PRIMARY KEY CHECK(id=1), webhook_paused boolean NOT NULL DEFAULT false);
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;

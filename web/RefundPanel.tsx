@@ -1,3 +1,4 @@
+import { ReferenceInput, FullAmount } from './QuickInput.js';
 import { useRef, useState, type FormEvent } from 'react';
 import type { Account } from '../shared/contracts.js';
 import { refundLabels, type CommercialReturn } from '../shared/commercial-returns.js';
@@ -195,18 +196,22 @@ export function RefundPanel({
                   pending.current = null;
                 }}
               />
+              <FullAmount
+                minor={expected}
+                onChange={(value) => {
+                  setAmount(value);
+                  setReviewed(false);
+                }}
+              />
             </label>
             <label>
               مرجع إقرار رد العميل
-              <input
-                aria-label="مرجع إقرار رد العميل"
-                minLength={3}
-                maxLength={100}
+              <ReferenceInput
+                label="مرجع إقرار رد العميل"
                 value={reference}
-                onChange={(e) => {
-                  setReference(e.target.value);
+                onChange={(value) => {
+                  setReference(value);
                   setReviewed(false);
-                  pending.current = null;
                 }}
               />
             </label>

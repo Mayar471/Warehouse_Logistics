@@ -20,6 +20,8 @@ export async function api<T>(url: string, init: RequestInit = {}): Promise<T> {
       result.message ?? 'تعذر إتمام العملية',
       response.status,
     );
+  if (init.method && init.method.toUpperCase() !== 'GET' && !url.endsWith('/notifications/read'))
+    window.dispatchEvent(new Event('logistics:updated'));
   return result as T;
 }
 export const key = () => crypto.randomUUID();

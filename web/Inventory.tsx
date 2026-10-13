@@ -1,3 +1,4 @@
+import { QuickChoices } from './QuickInput.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Box, Package, RefreshCw, Plus, ShieldCheck, LoaderCircle } from 'lucide-react';
 import type { InventoryView, InventorySitesView } from '../shared/inventory.js';
@@ -507,23 +508,16 @@ export function Inventory({ notify }: { notify: (message: string) => void }) {
                     </label>
                   </>
                 )}
-                <label>
-                  سبب الحركة / مرجعها
-                  <input
-                    aria-label="سبب الحركة / مرجعها"
-                    required
-                    minLength={3}
-                    maxLength={240}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder={
-                      inspection
-                        ? 'مثال: فحص التغليف والقطع وإثبات صلاحيتها'
-                        : 'مثال: استلام دفعة التوريد ١٢'
-                    }
-                    disabled={busy}
-                  />
-                </label>
+                <QuickChoices
+                  label="سبب الحركة / مرجعها"
+                  value={reason}
+                  choices={[
+                    'فحص القطع وتوثيق حالتها الفعلية',
+                    'استلام دفعة مخزون جديدة',
+                    'تحديث الرصيد بعد مراجعة الكميات',
+                  ]}
+                  onChange={setReason}
+                />
               </fieldset>
               {inspection && (
                 <p className="scope-note">

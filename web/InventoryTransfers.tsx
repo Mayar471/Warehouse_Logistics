@@ -1,3 +1,4 @@
+import { QuickChoices } from './QuickInput.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, Truck, Plus, RefreshCw, ShieldCheck, LoaderCircle } from 'lucide-react';
 import type { Account, Courier } from '../shared/contracts.js';
@@ -115,7 +116,7 @@ export function InventoryTransfers({
     setTarget({ row, action });
     setCreating(false);
     setAmounts({});
-    setReason('');
+    setReason(actions[action]);
     setReference('');
     setReviewed(false);
     setCourier('');
@@ -533,17 +534,28 @@ export function InventoryTransfers({
                 </label>
               </>
             )}
-            <label>
-              سبب إجراء النقل / مرجعه
-              <input
-                aria-label="سبب إجراء النقل / مرجعه"
-                required
-                minLength={3}
-                maxLength={240}
+            {(creating ||
+              (target &&
+                [
+                  'report_issue',
+                  'resolve_issue',
+                  'decline',
+                  'unassign',
+                  'cancel',
+                  'inspect_damage',
+                ].includes(target.action))) && (
+              <QuickChoices
+                label="سبب إجراء النقل / مرجعه"
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                choices={[
+                  'إعادة توزيع المخزون بين المواقع',
+                  'تزويد الموقع بالمخزون المطلوب',
+                  'تعذر التواصل مع المستلم',
+                  'توثيق فرق في القطع المستلمة',
+                ]}
+                onChange={setReason}
               />
-            </label>
+            )}
           </fieldset>
           {creating && (
             <p className={`count-preview ${weight > 50 ? 'invalid' : ''}`}>
@@ -596,7 +608,12 @@ export function InventoryTransfers({
           if (manage && ['reserved', 'assigned', 'accepted'].includes(row.status))
             available.push('cancel');
           return (
-            <article className="panel transfer-card" key={row.id}>
+            <article
+              className="panel transfer-card"
+              key={row.id}
+              data-notification-target={row.id}
+              tabIndex={-1}
+            >
               <div className="site-card-title">
                 <h3>TR-{row.id.slice(0, 8)}</h3>
                 <span className={'audit-status ' + (row.issueOpen ? 'exception' : '')}>

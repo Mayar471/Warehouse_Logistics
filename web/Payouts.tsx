@@ -1,3 +1,4 @@
+import { ReferenceInput, FullAmount } from './QuickInput.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Banknote, RefreshCw, ShieldCheck, LoaderCircle } from 'lucide-react';
 import type { Account } from '../shared/contracts.js';
@@ -90,7 +91,7 @@ export function Payouts({ account }: { account: Account }) {
     setTarget(t);
     setAmount('');
     setReference('');
-    setReason('');
+    setReason(t.action === 'report_issue' ? '' : actions[t.action]);
     setReviewed(false);
     setError('');
   }
@@ -311,36 +312,42 @@ export function Payouts({ account }: { account: Account }) {
                     setReviewed(false);
                   }}
                 />
+                <FullAmount
+                  minor={expected}
+                  onChange={(value) => {
+                    setAmount(value);
+                    setReviewed(false);
+                  }}
+                />
               </label>
             )}
             <label>
               مرجع إقرار الصرف
-              <input
-                aria-label="مرجع إقرار الصرف"
-                required
-                minLength={3}
-                maxLength={100}
+              <ReferenceInput
+                label="مرجع إقرار الصرف"
                 value={reference}
-                onChange={(e) => {
-                  setReference(e.target.value);
+                onChange={(value) => {
+                  setReference(value);
                   setReviewed(false);
                 }}
               />
             </label>
-            <label>
-              سبب إجراء الصرف
-              <input
-                aria-label="سبب إجراء الصرف"
-                required
-                minLength={3}
-                maxLength={240}
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setReviewed(false);
-                }}
-              />
-            </label>
+            {target.action === 'report_issue' && (
+              <label>
+                سبب إجراء الصرف
+                <input
+                  aria-label="سبب إجراء الصرف"
+                  required
+                  minLength={3}
+                  maxLength={240}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReviewed(false);
+                  }}
+                />
+              </label>
+            )}
             <label className="transfer-review">
               <input
                 type="checkbox"
@@ -414,7 +421,12 @@ export function Payouts({ account }: { account: Account }) {
       )}
       <div className="transfer-grid">
         {view?.rows.map((p) => (
-          <article className="panel transfer-card" key={p.id}>
+          <article
+            className="panel transfer-card"
+            key={p.id}
+            data-notification-target={p.id}
+            tabIndex={-1}
+          >
             <div className="site-card-title">
               <h3>PAY-{p.id.slice(0, 8)}</h3>
               <span className={'audit-status ' + (p.issueOpen ? 'exception' : '')}>

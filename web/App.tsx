@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { CommercialReturns } from './CommercialReturns.js';
+import { Notifications, focusNotificationTarget } from './Notifications.js';
+import { QuickChoices, ReferenceInput, FullAmount } from './QuickInput.js';
 import { CourierTasks } from './CourierTasks.js';
 import { Inventory } from './Inventory.js';
 import { InventoryTransfers } from './InventoryTransfers.js';
@@ -431,6 +433,25 @@ export function App() {
             <strong>{title}</strong>
           </div>
           <div className="topbar-actions">
+            {data && (
+              <Notifications
+                key={data.account.id}
+                identity={data.account.id}
+                onOpen={(item) => {
+                  if (item.kind === 'shipment') {
+                    setSelected(item.targetId);
+                    return;
+                  }
+                  if (item.kind === 'return' || item.kind === 'refund') {
+                    setSelectedReturn(item.targetId);
+                    return;
+                  }
+                  setNav(item.page === 'orders' ? 'overview' : item.page);
+                  focusNotificationTarget(item.targetId);
+                  setMenu(false);
+                }}
+              />
+            )}
             <a className="storefront-link" href="/shop" target="_blank" rel="noreferrer">
               <Store size={16} /> تجربة المتجر
             </a>
@@ -849,24 +870,26 @@ export function App() {
           report={report}
         />
       )}
-      {selectedReturn && data?.account.role === 'courier' && (
-        <Modal
-          title="مهمة استلام مرتجع"
-          subtitle="الاستلام والعهدة والإجراء التالي"
-          wide
-          onClose={() => setSelectedReturn(null)}
-        >
-          <CommercialReturns
-            key={data.account.id + selectedReturn}
-            account={data.account}
-            couriers={data.couriers}
-            focusId={selectedReturn}
-            onChanged={async () => {
-              await refresh();
-            }}
-          />
-        </Modal>
-      )}
+      {selectedReturn &&
+        data &&
+        ['operator', 'merchant', 'courier'].includes(data.account.role) && (
+          <Modal
+            title={data.account.role === 'courier' ? 'مهمة استلام مرتجع' : 'تفاصيل مرتجع العميل'}
+            subtitle="الاستلام والعهدة والإجراء التالي"
+            wide
+            onClose={() => setSelectedReturn(null)}
+          >
+            <CommercialReturns
+              key={data.account.id + selectedReturn}
+              account={data.account}
+              couriers={data.couriers}
+              focusId={selectedReturn}
+              onChanged={async () => {
+                await refresh();
+              }}
+            />
+          </Modal>
+        )}
       {selected && data && (
         <ShipmentDetails
           id={selected}
@@ -1811,16 +1834,17 @@ function ShipmentDetails({
                   </label>
                 )}
                 {['fail', 'return', 'decline', 'unassign'].includes(confirm) && (
-                  <label>
-                    سبب الإجراء
-                    <input
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      minLength={3}
-                      maxLength={240}
-                      placeholder="مثال: تعذر التواصل مع المستلم"
-                    />
-                  </label>
+                  <QuickChoices
+                    label="سبب الإجراء"
+                    value={reason}
+                    choices={[
+                      'تعذر التواصل مع المستلم',
+                      'العميل طلب التأجيل',
+                      'العنوان غير واضح',
+                      'المستلم رفض الاستلام',
+                    ]}
+                    onChange={setReason}
+                  />
                 )}
                 {['deliver', 'release_pickup'].includes(confirm) && s!.collection && (
                   <div className="cash-confirmation">
@@ -1840,20 +1864,23 @@ function ShipmentDetails({
                           setCashReviewed(false);
                         }}
                       />
+                      <FullAmount
+                        minor={s!.collection!.totalMinor}
+                        onChange={(value) => {
+                          setCashAmount(value);
+                          setCashReviewed(false);
+                        }}
+                      />
                     </label>
                     <label>
                       مرجع إقرار التحصيل
-                      <input
-                        aria-label="مرجع إقرار التحصيل"
+                      <ReferenceInput
+                        label="مرجع إقرار التحصيل"
                         value={cashReference}
-                        onChange={(e) => {
-                          setCashReference(e.target.value);
+                        onChange={(value) => {
+                          setCashReference(value);
                           setCashReviewed(false);
                         }}
-                        aria-describedby="cash-reference-help"
-                        placeholder="مثال: إيصال 123"
-                        minLength={3}
-                        maxLength={100}
                       />
                       <small id="cash-reference-help">
                         مرجع يوضح إقرار استلام النقد، من 3 أحرف على الأقل.

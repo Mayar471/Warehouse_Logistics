@@ -76,6 +76,24 @@ try {
       '#762557',
     );
     await check(page, 'overview', width);
+    await page.getByRole('button', { name: /^الإشعارات/ }).click();
+    await page.locator('.notification-item').first().waitFor();
+    await check(page, 'notifications', width);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.notification-panel').count(), 0);
+    if (width === 1440) {
+      await page.getByRole('button', { name: /^الإشعارات/ }).click();
+      await page.getByRole('button', { name: 'تحديد الكل كمقروء' }).click();
+      await page.getByText('0 غير مقروءة', { exact: true }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.reload();
+      await page.locator('.metric').first().waitFor();
+      await page.getByRole('button', { name: /^الإشعارات/ }).click();
+      await page.getByText('0 غير مقروءة', { exact: true }).waitFor();
+      await page.locator('.notification-item').first().click();
+      await page.getByRole('dialog').waitFor();
+      await page.getByRole('button', { name: 'إغلاق النافذة', exact: true }).click();
+    }
     for (const [id, label] of [
       ['shipments', 'الشحنات'],
       ['network', 'شبكة الشركاء'],

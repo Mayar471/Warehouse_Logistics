@@ -1,4 +1,5 @@
 import { registerCustomerRefunds } from './customer-refunds.js';
+import { registerNotifications } from './notifications.js';
 import { commercialReturnSelect, returnEvent } from './commercial-returns.js';
 import type { CommercialReturn } from '../shared/commercial-returns.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -49,6 +50,7 @@ export function registerStorefront(
     return createHash('sha256').update(token).digest('hex');
   }
   registerCustomerRefunds(app, write, owner, options.clock ?? Date.now);
+  registerNotifications(app, write, owner, '/api/storefront/notifications');
   app.post('/api/storefront/session', async (req, reply) => {
     guard(req);
     if (!req.cookies.shop || !/^[a-f0-9]{64}$/.test(req.cookies.shop))

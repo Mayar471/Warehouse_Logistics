@@ -31,6 +31,7 @@ import {
   type StoreOrder,
 } from '../shared/catalog.js';
 import { statusLabels } from '../shared/contracts.js';
+import { Notifications, focusNotificationTarget } from './Notifications.js';
 import './storefront.css';
 import './trend-identity.css';
 import trendLogo from '../logo.jpg';
@@ -417,7 +418,12 @@ export function Storefront() {
     );
   }
   const orderCard = (order: StoreOrder) => (
-    <article className="shop-order" key={order.checkoutId}>
+    <article
+      className="shop-order"
+      key={order.checkoutId}
+      data-notification-target={order.shipment.reference}
+      tabIndex={-1}
+    >
       <div className="shop-order-top">
         <span>
           <Package size={20} />
@@ -576,6 +582,18 @@ export function Storefront() {
             طلباتي
           </button>
         </nav>
+        {ready && (
+          <Notifications
+            identity="customer"
+            customer
+            onOpen={(item) => {
+              focusNotificationTarget(item.reference);
+              setQuote(null);
+              setPage('orders');
+              void refreshOrders().catch(() => {});
+            }}
+          />
+        )}
         <button
           className="shop-bag"
           aria-label={`السلة، ${count} منتجات`}

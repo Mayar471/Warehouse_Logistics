@@ -1,3 +1,4 @@
+import { ReferenceInput, FullAmount } from './QuickInput.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Wallet, RefreshCw, ShieldCheck, LoaderCircle } from 'lucide-react';
 import type { Account } from '../shared/contracts.js';
@@ -58,7 +59,9 @@ export function Cash({ account }: { account: Account }) {
     setTarget({ row, action });
     setAmount('');
     setReference('');
-    setReason('');
+    setReason(
+      ['report_difference', 'return_difference'].includes(action) ? '' : actionLabels[action],
+    );
     setReviewed(false);
     setError('');
   }
@@ -277,35 +280,41 @@ export function Cash({ account }: { account: Account }) {
                   setReviewed(false);
                 }}
               />
+              <FullAmount
+                minor={target.row.totalMinor}
+                onChange={(value) => {
+                  setAmount(value);
+                  setReviewed(false);
+                }}
+              />
             </label>
             <label>
               مرجع الإيصال أو محضر الفرق
-              <input
-                aria-label="مرجع الإيصال أو محضر الفرق"
-                required
-                minLength={3}
-                maxLength={100}
+              <ReferenceInput
+                label="مرجع الإيصال أو محضر الفرق"
                 value={reference}
-                onChange={(e) => {
-                  setReference(e.target.value);
+                onChange={(value) => {
+                  setReference(value);
                   setReviewed(false);
                 }}
               />
             </label>
-            <label>
-              سبب الإقرار المالي
-              <input
-                aria-label="سبب الإقرار المالي"
-                required
-                minLength={3}
-                maxLength={240}
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setReviewed(false);
-                }}
-              />
-            </label>
+            {['report_difference', 'return_difference'].includes(target.action) && (
+              <label>
+                سبب الإقرار المالي
+                <input
+                  aria-label="سبب الإقرار المالي"
+                  required
+                  minLength={3}
+                  maxLength={240}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReviewed(false);
+                  }}
+                />
+              </label>
+            )}
             <label className="transfer-review">
               <input
                 type="checkbox"
@@ -351,7 +360,12 @@ export function Cash({ account }: { account: Account }) {
       )}
       <div className="transfer-grid">
         {view?.rows.map((row) => (
-          <article className="panel transfer-card" key={row.shipmentId}>
+          <article
+            className="panel transfer-card"
+            key={row.shipmentId}
+            data-notification-target={row.shipmentId}
+            tabIndex={-1}
+          >
             <div className="site-card-title">
               <h3>{row.shipmentReference}</h3>
               <span

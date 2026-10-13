@@ -8,6 +8,7 @@ import { App } from './App.js';
 import { Storefront } from './Storefront.js';
 import './styles.css';
 import './operations-theme.css';
+import './workflow-ux.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>{location.pathname === '/shop' ? <Storefront /> : <App />}</React.StrictMode>,

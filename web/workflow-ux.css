@@ -1,0 +1,257 @@
+.quick-input,
+.quick-reference {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.quick-label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.quick-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.quick-options button,
+.quick-amount {
+  min-height: 44px;
+  border: 1px solid #dbcadd;
+  border-radius: 10px;
+  background: #f7f0f8;
+  color: #68456d;
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 13px;
+  text-align: start;
+}
+.quick-options button[aria-pressed='true'] {
+  background: #762557;
+  color: #fff;
+  border-color: #762557;
+}
+.quick-custom {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: #77637c;
+}
+.quick-custom textarea {
+  width: 100%;
+  border: 1px solid #dbcedf;
+  padding: 12px;
+  border-radius: 12px;
+  resize: vertical;
+  color: #322135;
+  font: inherit;
+  background: white;
+}
+.quick-reference small {
+  color: #77637c;
+  line-height: 1.8;
+  font-size: 12px;
+}
+.quick-reference .button {
+  justify-self: start;
+  white-space: normal;
+}
+.quick-amount {
+  width: 100%;
+  margin-top: 6px;
+}
+.notification-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.notification-trigger {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #dfd1e2;
+  background: #f4edf5;
+  color: #762557;
+  border-radius: 12px;
+}
+.notification-trigger > span {
+  position: absolute;
+  top: -5px;
+  inset-inline-end: -4px;
+  border-radius: 20px;
+  background: #762557;
+  color: #fff;
+  padding: 2px 5px;
+  min-width: 19px;
+  font-size: 10px;
+  border: 2px solid #fff;
+}
+.notification-panel {
+  position: absolute;
+  top: calc(100% + 14px);
+  inset-inline-end: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  color: #322135;
+  background: #fffdff;
+  border: 1px solid #dfd1e2;
+  border-radius: 18px;
+  box-shadow: 0 16px 60px #321d3c25;
+  z-index: 60;
+  overflow: hidden;
+  text-align: start;
+}
+.notification-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px;
+  background: #f7f1f8;
+}
+.notification-panel h2 {
+  font-size: 19px;
+  margin: 0;
+}
+.notification-panel header p {
+  font-size: 12px;
+  color: #76647a;
+  margin-top: 6px;
+}
+.notification-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-block: 1px solid #eee5f0;
+  font-size: 12px;
+}
+.notification-tools button,
+.notification-error button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+  color: #762557;
+  background: transparent;
+  font: inherit;
+}
+.notification-list {
+  max-height: min(440px, 55vh);
+  overflow-y: auto;
+}
+.notification-item {
+  width: 100%;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fff;
+  color: #543558;
+  text-align: start;
+  border-bottom: 1px solid #eee5f0;
+  font: inherit;
+}
+.notification-item.is-unread {
+  background: #f8f1fa;
+}
+.notification-item:hover {
+  background: #efe3f2;
+}
+.notification-item > div {
+  flex: 1;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.notification-item strong {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.notification-item span:not(.notification-dot) {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.notification-item small {
+  font-size: 11px;
+  color: #76647a;
+}
+.notification-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  margin-top: 8px;
+}
+.is-unread .notification-dot {
+  background: #762557;
+}
+.notification-panel footer,
+.notification-empty {
+  font-size: 12px;
+  color: #76647a;
+  padding: 16px;
+  line-height: 1.8;
+}
+.notification-error {
+  padding: 12px 16px;
+  background: #fff0e8;
+  color: #934a28;
+  font-size: 12px;
+}
+.shop .notification-trigger {
+  background: #ffffff0d;
+  color: #eee2f1;
+  border-color: #ffffff26;
+}
+.shop-header {
+  gap: 16px;
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .app-shell .topbar {
+    flex-wrap: wrap;
+  }
+  .app-shell .topbar-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .app-shell .breadcrumb {
+    width: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .notification-panel {
+    position: fixed;
+    top: 100px;
+    inset-inline: 16px;
+    width: auto;
+    max-width: none;
+  }
+  .app-shell .topbar-actions {
+    flex-wrap: wrap;
+  }
+  .notification-trigger {
+    width: 36px;
+    height: 36px;
+  }
+}
+@media (max-width: 600px) {
+  .shop-header {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .shop-header .shop-brand {
+    flex: 1;
+  }
+  .shop-header nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .shop .notification-panel {
+    top: 138px;
+  }
+}

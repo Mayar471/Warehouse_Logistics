@@ -1,3 +1,5 @@
+import { QuickChoices } from './QuickInput.js';
+import { ReferenceInput } from './QuickInput.js';
 import { RefundPanel } from './RefundPanel.js';
 import { FinancialRecovery, useFinancialRecovery } from './FinancialRecovery.js';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
@@ -281,36 +283,36 @@ export function CommercialReturns({
             {target.action !== 'reply' && (
               <label>
                 مرجع إجراء الإرجاع
-                <input
-                  aria-label="مرجع إجراء الإرجاع"
-                  required
-                  minLength={3}
-                  maxLength={100}
+                <ReferenceInput
+                  label="مرجع إجراء الإرجاع"
                   value={reference}
-                  onChange={(e) => {
-                    setReference(e.target.value);
+                  onChange={(value) => {
+                    setReference(value);
                     setReviewed(false);
                   }}
                 />
               </label>
             )}
             {['report', 'reply'].includes(target.action) && (
-              <label>
-                {target.action === 'reply' ? 'رد المتجر بعد الفحص' : 'وصف تعثر الاستلام أو النقل'}
-                <textarea
-                  aria-label={
-                    target.action === 'reply' ? 'رد المتجر بعد الفحص' : 'وصف تعثر الاستلام أو النقل'
-                  }
-                  required
-                  minLength={5}
-                  maxLength={target.action === 'reply' ? 500 : 240}
-                  value={reason}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                    setReviewed(false);
-                  }}
-                />
-              </label>
+              <QuickChoices
+                label={
+                  target.action === 'reply' ? 'رد المتجر بعد الفحص' : 'وصف تعثر الاستلام أو النقل'
+                }
+                value={reason}
+                choices={
+                  target.action === 'reply'
+                    ? [
+                        'تم فحص القطع وتأكيد قبول الإرجاع',
+                        'القطع غير مطابقة لشروط الإرجاع بعد الفحص',
+                      ]
+                    : ['تعذر التواصل مع العميل', 'العميل طلب التأجيل', 'تعذر الوصول إلى الموقع']
+                }
+                onChange={(value) => {
+                  setReason(value);
+                  setReviewed(false);
+                }}
+                maxLength={500}
+              />
             )}
             <label className="transfer-review">
               <input

@@ -181,7 +181,7 @@ try {
   await customer.getByText('تم التسليم', { exact: true }).first().waitFor({ timeout: 15000 });
   assert.equal(await customer.locator('.shop-progress .done').count(), 5);
   await customer.getByRole('button', { name: 'طلب إرجاع كامل الطلب', exact: true }).click();
-  await customer.getByLabel('سبب طلب الإرجاع').fill('المنتج لا يناسب احتياجات العميل');
+  await customer.getByRole('button', { name: 'المنتج مختلف عن الوصف', exact: true }).click();
   await customer.getByLabel('راجعت طلب الإرجاع وأؤكد تسجيله لطلبي.').check();
   await customer.getByRole('button', { name: 'تأكيد طلب الإرجاع', exact: true }).click();
   await customer.getByRole('button', { name: 'سحب طلب الإرجاع', exact: true }).waitFor();
@@ -328,8 +328,10 @@ try {
   const refundAmount = String(shipment.collection.goodsMinor / 100);
   async function fillRefund(p: typeof merchant) {
     const panel = p.getByLabel('رد أموال العميل');
-    await panel.getByLabel('مبلغ رد العميل').fill(refundAmount);
-    await panel.getByLabel('مرجع إقرار رد العميل').fill('إيصال رد 123');
+    await panel.getByRole('button', { name: /استخدام كامل المبلغ/ }).click();
+    assert.equal(await panel.getByLabel('مبلغ رد العميل').inputValue(), refundAmount);
+    await panel.getByRole('button', { name: 'إنشاء مرجع إقرار داخلي', exact: true }).click();
+    assert.match(await panel.getByLabel('مرجع إقرار رد العميل').inputValue(), /^ACK-/);
     assert.equal(await panel.getByLabel('سبب إقرار رد العميل').count(), 0);
     await panel.getByLabel('راجعت المبلغ وأؤكد إقرار رد العميل باسم حسابي.').check();
   }

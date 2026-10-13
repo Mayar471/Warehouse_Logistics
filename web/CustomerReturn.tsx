@@ -1,3 +1,4 @@
+import { QuickChoices } from './QuickInput.js';
 import { RefundPanel } from './RefundPanel.js';
 import { useState, useRef, type FormEvent } from 'react';
 import type { StoreOrder } from '../shared/catalog.js';
@@ -135,25 +136,21 @@ export function CustomerReturn({
           )}
           <fieldset disabled={locked}>
             {target.action === 'request' && (
-              <label>
-                سبب{' '}
-                {target.action === 'request'
-                  ? 'الإرجاع'
-                  : target.action === 'handover'
-                    ? 'إقرار التسليم'
-                    : 'سحب الإرجاع'}
-                <textarea
-                  aria-label="سبب طلب الإرجاع"
-                  minLength={5}
-                  maxLength={500}
-                  required
-                  value={reason}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                    setReviewed(false);
-                  }}
-                />
-              </label>
+              <QuickChoices
+                label="سبب طلب الإرجاع"
+                value={reason}
+                choices={[
+                  'جودة المنتج رديئة',
+                  'المنتج مختلف عن الوصف',
+                  'وصل المنتج تالفًا',
+                  'المنتج غير المطلوب',
+                ]}
+                onChange={(value) => {
+                  setReason(value);
+                  setReviewed(false);
+                }}
+                maxLength={500}
+              />
             )}
             <label className="transfer-review">
               <input
