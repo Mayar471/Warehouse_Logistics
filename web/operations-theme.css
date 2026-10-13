@@ -1,0 +1,628 @@
+/* Shared visual language with the customer storefront. Scope keeps commerce intact. */
+.app-shell {
+  --ink: #322135;
+  --teal: #762557;
+  --border: #e5dce7;
+  --muted: #76647a;
+  --brand-plum: #762557;
+  --brand-dark: #2e1937;
+  --brand-lime: #ddeb9b;
+  --surface-soft: #f6f1f7;
+  --surface-shadow: 0 4px 24px #321d3c06;
+  font-family: 'Tajawal', sans-serif;
+  font-weight: 500;
+  color: var(--ink);
+  background: radial-gradient(ellipse at 5% 0%, #e7dbea 0%, transparent 50%), #f3eef4;
+}
+.app-shell :is(h1, h2, h3, button, input, select, textarea) {
+  font-family: inherit;
+}
+.app-shell :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid #995789;
+  outline-offset: 3px;
+}
+.app-shell :is(input, select, textarea) {
+  accent-color: var(--brand-plum);
+  border-color: #dbcedf;
+  color: var(--ink);
+  background-color: #fff;
+  border-radius: 12px;
+}
+.app-shell input::placeholder,
+.app-shell textarea::placeholder {
+  color: #87748c;
+}
+.app-shell .sidebar {
+  background:
+    radial-gradient(ellipse at 100% 0%, #613864 0%, transparent 50%),
+    linear-gradient(170deg, #321d3c, #211324);
+  color: #e8dcea;
+  border-inline-end: 1px solid #ffffff12;
+  padding: 28px 18px 20px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #795377 transparent;
+}
+.app-shell .brand {
+  padding-bottom: 26px;
+  gap: 12px;
+}
+.app-shell .brand-mark {
+  background: var(--brand-lime);
+  color: var(--brand-dark);
+  border-radius: 14px;
+  box-shadow: 0 6px 20px #160c2520;
+}
+.app-shell .brand strong {
+  font-size: 18px;
+}
+.app-shell .brand small {
+  font-size: 12px;
+  color: #c9b5cc;
+  margin-top: 5px;
+}
+.app-shell .workspace-label {
+  color: #baa4c0;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.app-shell .sidebar nav {
+  gap: 6px;
+}
+.app-shell .nav-item {
+  color: #d1bed6;
+  font-size: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  min-height: 48px;
+  transition:
+    background 0.18s,
+    color 0.18s;
+}
+.app-shell .nav-item:hover {
+  background: #ffffff0d;
+  color: #fff;
+}
+.app-shell .nav-item.active {
+  background: #ddeb9b;
+  color: #302238;
+  font-weight: 700;
+  box-shadow: 0 4px 18px #10051c18;
+}
+.app-shell .nav-item.active .nav-count {
+  background: #30223812;
+}
+.app-shell .nav-count {
+  border-radius: 7px;
+  font-size: 12px;
+}
+.app-shell .demo-note {
+  margin-top: 26px;
+  border-color: #ffffff16;
+  border-radius: 16px;
+}
+.app-shell .demo-note svg {
+  color: var(--brand-lime);
+}
+.app-shell .demo-note strong {
+  color: #eee2f1;
+  font-size: 12px;
+}
+.app-shell .demo-note p,
+.app-shell .sidebar-version {
+  color: #c2acc7;
+  font-size: 11px;
+}
+.app-shell .sidebar-version .live-dot {
+  background: var(--brand-lime);
+  box-shadow: 0 0 0 3px #ddeb9b12;
+}
+.app-shell .topbar {
+  background: #fffbff;
+  border-color: var(--border);
+  min-height: 80px;
+  height: auto;
+  padding-block: 14px;
+}
+.app-shell .breadcrumb {
+  color: var(--muted);
+  font-size: 13px;
+}
+.app-shell .breadcrumb strong {
+  color: #543358;
+  font-weight: 700;
+}
+.app-shell .topbar-actions {
+  gap: 16px;
+}
+.app-shell .avatar {
+  background: #ede0ef;
+  color: #762557;
+  border-radius: 12px;
+}
+.app-shell .account-control select {
+  color: #543358;
+  font-size: 13px;
+  background: transparent;
+}
+.app-shell .account-control > svg {
+  color: #87708b;
+}
+.app-shell .storefront-link {
+  color: #762557;
+  font-size: 13px;
+}
+.app-shell .demo-chip {
+  background: #f0f4df;
+  border-color: #dce3ba;
+  color: #4c5830;
+  border-radius: 8px;
+}
+.app-shell .demo-chip > span {
+  background: #65743c;
+}
+.app-shell .main-content {
+  padding-top: 28px;
+}
+.app-shell .page-heading {
+  background: radial-gradient(ellipse at 0% 50%, #724474, transparent 65%), #321d3c;
+  border-radius: 22px;
+  color: #fff6ff;
+  padding: 28px;
+  margin-bottom: 24px;
+  min-height: 142px;
+  box-shadow: 0 8px 28px #321d3c0d;
+}
+.app-shell .page-heading h1 {
+  font-size: 30px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin: 6px 0;
+}
+.app-shell .page-heading .eyebrow {
+  color: var(--brand-lime);
+  font-size: 12px;
+}
+.app-shell .page-heading > div > p:last-child {
+  color: #decae1;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.app-shell .heading-actions {
+  flex-wrap: wrap;
+}
+.app-shell .heading-actions .primary {
+  background: var(--brand-lime);
+  color: #302238;
+  box-shadow: none;
+}
+.app-shell .heading-actions .primary:hover {
+  background: #edf6be;
+}
+.app-shell .heading-actions .secondary {
+  background: #ffffff0c;
+  border-color: #ffffff35;
+  color: #f7eef8;
+}
+.app-shell .heading-actions .secondary:hover {
+  background: #ffffff18;
+}
+.app-shell .button {
+  border-radius: 11px;
+  min-height: 44px;
+  font-size: 14px;
+  padding: 10px 16px;
+  transition:
+    background 0.18s,
+    box-shadow 0.18s;
+}
+.app-shell .button.primary {
+  background: var(--brand-plum);
+  color: #fff;
+  box-shadow: 0 3px 10px #76255712;
+}
+.app-shell .button.primary:hover:not(:disabled) {
+  background: #5f1d46;
+}
+.app-shell .button.secondary {
+  border-color: #dbcedf;
+  color: #604365;
+  background: #fff;
+}
+.app-shell .button.secondary:hover:not(:disabled) {
+  background: #f4edf5;
+}
+/* Hero actions are the lime counterpart of the storefront hero. */
+.app-shell .page-heading .button.primary {
+  background: var(--brand-lime);
+  color: #302238;
+}
+.app-shell .page-heading .button.primary:hover:not(:disabled) {
+  background: #edf6be;
+}
+.app-shell .page-heading .button.secondary {
+  background: #ffffff0c;
+  border-color: #ffffff35;
+  color: #f7eef8;
+}
+.app-shell .page-heading .button.secondary:hover:not(:disabled) {
+  background: #ffffff18;
+}
+.app-shell .icon-button {
+  color: #76567b;
+  border-radius: 9px;
+}
+.app-shell .icon-button:hover {
+  background: #f0e6f2;
+}
+.app-shell :is(.panel, .metric, .inventory-site-card, .courier-card, .detail-card) {
+  border-color: var(--border);
+  border-radius: 18px;
+  background: #fffdff;
+  box-shadow: var(--surface-shadow);
+}
+.app-shell .metric {
+  padding: 22px;
+}
+.app-shell .metric-top {
+  color: #6f5775;
+  font-size: 14px;
+}
+.app-shell .metric-icon {
+  background: #f1e7f3;
+  color: #84578d;
+  border-radius: 12px;
+}
+.app-shell .metric-warning .metric-icon {
+  background: #fff3de;
+  color: #98651b;
+}
+.app-shell .metric > strong {
+  color: #402349;
+  font-size: 34px;
+}
+.app-shell .metric > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.app-shell .panel-title h2,
+.app-shell .panel-heading h2 {
+  color: #42284a;
+  font-size: 19px;
+}
+.app-shell .panel-title p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.app-shell :is(.panel-title > svg, .site-icon, .detail-card h3 svg, .inventory-ledger-icon) {
+  color: #926699;
+}
+.app-shell :is(.site-icon, .inventory-ledger-icon, .mini-avatar) {
+  background: #f1e7f3;
+}
+.app-shell
+  :is(
+    .muted,
+    .scope-note,
+    .bottom-note,
+    .app-footer,
+    .table-footer,
+    .detail-summary,
+    .reconciliation-note,
+    .recovery-audit small,
+    .inventory-scope p,
+    .inventory-ledger small,
+    .site-item p,
+    .courier-card small,
+    .panel-heading p,
+    .detail-card dt,
+    .stop small,
+    .custody small
+  ) {
+  color: var(--muted);
+}
+.app-shell
+  :is(
+    .eyebrow,
+    .reference-button,
+    .money,
+    .cash-metrics strong,
+    .inventory-metrics strong,
+    .detail-card h3,
+    .custody strong,
+    .stop strong
+  ) {
+  color: #762557;
+}
+.app-shell :is(.detail-card dd, .inventory-fields label, .form-grid label, .confirmation label) {
+  color: #513656;
+}
+.app-shell
+  :is(
+    .cash-metrics span,
+    .inventory-metrics span,
+    .flow-row > div:first-child,
+    .map-legend,
+    .map-caption,
+    .flow-footer,
+    .inventory-ledger p,
+    .transfer-card p,
+    .transfer-card small
+  ) {
+  color: #725b78;
+}
+.app-shell :is(.inventory-intro, .integration-hero) {
+  background: linear-gradient(120deg, #eee2f1, #faf6fa);
+  color: #5f3765;
+  border-color: #decee2;
+  border-radius: 20px;
+}
+.app-shell .inventory-intro .eyebrow {
+  color: #805988;
+}
+.app-shell :is(.integration-hero p, .inventory-form p, .cash-confirmation p) {
+  color: #735878;
+}
+.app-shell :is(.inventory-metrics > div, .detail-card, .inventory-return-list > div) {
+  border-color: var(--border);
+}
+.app-shell .inventory-metrics > div {
+  color: #8c6093;
+  border-radius: 18px;
+}
+.app-shell
+  :is(
+    .cash-confirmation,
+    .form-note,
+    .transfer-route,
+    .shipment-stock-summary,
+    .quote-summary,
+    .count-baseline,
+    .count-preview:not(.invalid)
+  ) {
+  background: #f7f1f8;
+  border-color: #e2d4e6;
+  color: #604365;
+}
+.app-shell :is(.cash-confirmation, .form-note, .transfer-route, .quote-summary) {
+  border-radius: 14px;
+}
+.app-shell
+  :is(.quote-summary > div, .quote-summary strong, .quote-summary p, .quote-summary small) {
+  color: #762557;
+}
+.app-shell .inventory-tabs button {
+  border-color: #dfd1e2;
+  color: #725477;
+  background: #f5eef6;
+  border-radius: 10px;
+}
+.app-shell .inventory-tabs button[aria-selected='true'] {
+  color: #fff;
+  background: #762557;
+  border-color: #762557;
+}
+.app-shell :is(.subtle-chip, .note-badge) {
+  color: #715776;
+  border-color: #dfd1e2;
+  background: #f6f0f7;
+  border-radius: 8px;
+}
+.app-shell .table-toolbar {
+  background: #fcf9fd;
+  border-color: var(--border);
+}
+.app-shell :is(.table-scroll, .table-wrap) {
+  position: relative;
+  min-width: 0;
+}
+.app-shell .main-shell {
+  min-width: 0;
+}
+.app-shell .location-shell {
+  color: #513656;
+  border-color: var(--border);
+}
+.app-shell .location-heading {
+  background: #f7f1f8;
+}
+.app-shell .location-link {
+  color: #762557;
+}
+.app-shell .location-eyebrow {
+  color: var(--muted);
+}
+.app-shell .location-empty {
+  background: #f7f1f8;
+  color: #76607b;
+}
+.app-shell :is(.empty, .loading, .transfer-empty, .tracking-card > p) {
+  color: var(--muted);
+}
+.app-shell .action-panel h3 {
+  color: #604365;
+}
+.app-shell .nav-scrim {
+  background: #24112c78;
+}
+.app-shell :is(.search-field, .filter-control select) {
+  border-color: #dfd1e2;
+  border-radius: 10px;
+}
+.app-shell .search-field input {
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+}
+.app-shell .filter-control select {
+  font-size: 14px;
+  color: #604365;
+}
+.app-shell th {
+  background: #f7f1f8;
+  color: #705576;
+  font-size: 12px;
+  padding-block: 15px;
+}
+.app-shell td {
+  color: #523958;
+  font-size: 14px;
+  border-color: #eee5f0;
+}
+.app-shell td > strong,
+.app-shell .reference-button {
+  font-size: 14px;
+}
+.app-shell td > small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.app-shell :is(.shipments-panel tbody tr:hover, .inventory-panel tbody tr:hover) {
+  background: #f9f4fa;
+}
+.app-shell .status {
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.app-shell :is(.status-picked_up, .status-in_transit) {
+  color: #703a83;
+  background: #f0e6f6;
+}
+.app-shell .status-ready {
+  color: #655279;
+  background: #eeeaf4;
+}
+.app-shell .status-returning {
+  color: #863d6c;
+  background: #f6e9f1;
+}
+.app-shell .modal-backdrop {
+  background: #24112c78;
+  backdrop-filter: blur(5px);
+}
+.app-shell .modal {
+  background: #fffdff;
+  border: 1px solid #e2d6e6;
+  border-radius: 22px;
+  box-shadow: 0 24px 100px #24112c40;
+}
+.app-shell .modal-header {
+  background: #f8f2f9;
+}
+.app-shell .modal-header h2 {
+  color: #44274d;
+  font-size: 21px;
+}
+.app-shell .modal-header p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.app-shell .modal-footer {
+  background: #fcf9fd;
+}
+.app-shell :is(.timeline-item p, .timeline-item small, .confirmation > strong) {
+  color: #76607b;
+}
+.app-shell .timeline-dot {
+  border-color: #995789;
+}
+.app-shell .timeline-item:not(:last-child)::before {
+  border-color: #dfd1e2;
+}
+.app-shell .action-panel {
+  background: #f8f3fa;
+  border-color: #e2d4e6;
+  border-radius: 16px;
+}
+.app-shell .toast {
+  background: #321d3c;
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 28px #321d3c25;
+}
+@media (min-width: 1001px) {
+  .app-shell {
+    --sidebar: 258px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .app-shell .brand strong {
+    font-size: 15px;
+  }
+  .app-shell .brand small {
+    font-size: 11px;
+  }
+  .app-shell .nav-item {
+    font-size: 12px;
+    padding-inline: 9px;
+    gap: 8px;
+  }
+}
+@media (max-width: 760px) {
+  .app-shell .sidebar {
+    width: min(286px, 88vw);
+  }
+  .app-shell .topbar {
+    padding: 12px 16px;
+    min-height: 76px;
+  }
+  .app-shell .topbar-actions {
+    gap: 9px;
+  }
+  .app-shell .account-control select {
+    font-size: 12px;
+  }
+  .app-shell .main-content {
+    padding: 18px 16px 24px;
+  }
+  .app-shell .page-heading {
+    padding: 22px 20px;
+    border-radius: 18px;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .app-shell .page-heading h1 {
+    font-size: 26px;
+  }
+  .app-shell .page-heading > div > p:last-child {
+    font-size: 13px;
+  }
+  .app-shell .heading-actions {
+    gap: 8px;
+  }
+  .app-shell .metric {
+    padding: 16px;
+    border-radius: 16px;
+  }
+  .app-shell .metric-top {
+    font-size: 13px;
+  }
+  .app-shell .metric > strong {
+    font-size: 28px;
+  }
+  .app-shell .metric > small {
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .app-shell .button {
+    font-size: 13px;
+    padding: 10px 13px;
+  }
+  .app-shell .shipments-panel td {
+    font-size: 13px;
+  }
+  .app-shell .status {
+    font-size: 11px;
+  }
+  .app-shell .modal {
+    border-radius: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .app-shell *::before,
+  .app-shell *::after {
+    transition: none !important;
+  }
+}

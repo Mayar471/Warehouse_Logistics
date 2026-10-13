@@ -387,6 +387,7 @@ export function App() {
               <button
                 key={item.id}
                 className={`nav-item ${nav === item.id ? 'active' : ''}`}
+                aria-current={nav === item.id ? 'page' : undefined}
                 onClick={() => {
                   setNav(item.id);
                   setMenu(false);

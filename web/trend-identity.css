@@ -1,4 +1,4 @@
-/* The storefront owns its visual identity; operations retain their own typography. */
+/* Customer storefront identity; operations-theme.css carries this palette into the workspace. */
 .catalog-stage {
   scroll-margin-top: 135px;
   position: relative;
