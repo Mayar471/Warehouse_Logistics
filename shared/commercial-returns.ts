@@ -1,6 +1,8 @@
 export interface CommercialReturn {
   refund: CustomerRefund | null;
   inspectionComplete: boolean;
+  inspectionReply: string | null;
+  inspectionRepliedAt: string | null;
   id: string;
   shipmentId: string;
   shipmentReference: string;
@@ -85,4 +87,16 @@ export const refundLabels = {
   released: 'خرج النقد — بانتظار تأكيد العميل',
   confirmed: 'أكد العميل استلام كامل الرد',
   cancelled: 'أُلغي قرار الرد قبل خروج النقد',
+};
+
+export const returnAuditNotes: Record<string, string> = {
+  approve: 'وافق المتجر على تنظيم الاستلام؛ الرد النهائي بعد الفحص',
+  reject: 'رفض المتجر ترتيب استلام المرتجع',
+  assign: 'أسندت العمليات استلام المرتجع إلى المندوب المحدد',
+  accept: 'قبل المندوب مهمة استلام المرتجع',
+  decline: 'رفض المندوب المهمة دون انتقال عهدة',
+  unassign: 'حررت العمليات الإسناد قبل تسليم العميل',
+  pickup: 'أكد المندوب استلام كامل المرتجع من العميل',
+  receive: 'أكد المتجر استلام كامل المرتجع وعزله للفحص',
+  reply: 'أرسل المتجر رده بعد اكتمال فحص المرتجع',
 };

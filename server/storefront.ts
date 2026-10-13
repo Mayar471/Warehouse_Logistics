@@ -227,7 +227,7 @@ export function registerStorefront(
           .object({
             action: z.enum(['cancel', 'handover']),
             expectedReturnVersion: z.number().int().positive(),
-            reason,
+            reason: reason.optional(),
           })
           .strict(),
       ])
@@ -287,7 +287,10 @@ export function registerStorefront(
             ownerHash,
             'العميل',
             b.action === 'handover' ? 'تسليم العميل للمندوب' : 'سحب طلب العميل',
-            b.reason,
+            b.reason ??
+              (b.action === 'handover'
+                ? 'أكد العميل تسليم كامل المرتجع للمندوب المكلف'
+                : 'سحب العميل طلب الإرجاع قبل انتقال العهدة'),
           );
           return { id: existing.id, status, version: existing.version + 1 };
         }

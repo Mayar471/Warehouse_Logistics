@@ -15,7 +15,8 @@ type ReturnAction =
   | 'unassign'
   | 'pickup'
   | 'receive'
-  | 'report';
+  | 'report'
+  | 'reply';
 const actionLabels: Record<ReturnAction, string> = {
   approve: 'قبول طلب الإرجاع',
   reject: 'رفض طلب الإرجاع',
@@ -26,6 +27,7 @@ const actionLabels: Record<ReturnAction, string> = {
   pickup: 'تأكيد استلام المرتجع من العميل',
   receive: 'تأكيد استلام كامل المرتجع في المنشأ',
   report: 'تسجيل تعثر المرتجع',
+  reply: 'إرسال رد المتجر بعد الفحص',
 };
 export function CommercialReturns({
   account,
@@ -106,8 +108,12 @@ export function CommercialReturns({
     const body = JSON.stringify({
       action: target.action,
       expectedVersion: target.row.version,
-      reference,
-      reason,
+      reference: target.action === 'reply' ? 'رد المتجر بعد الفحص' : reference,
+      ...(target.action === 'report'
+        ? { reason }
+        : target.action === 'reply'
+          ? { reply: reason }
+          : {}),
       ...(target.action === 'assign' ? { courierId, collectionAddress } : {}),
     });
     if (!pending.current || pending.current.body !== body) pending.current = { body, key: key() };
@@ -272,34 +278,40 @@ export function CommercialReturns({
               </>
             )}
 
-            <label>
-              مرجع إجراء الإرجاع
-              <input
-                aria-label="مرجع إجراء الإرجاع"
-                required
-                minLength={3}
-                maxLength={100}
-                value={reference}
-                onChange={(e) => {
-                  setReference(e.target.value);
-                  setReviewed(false);
-                }}
-              />
-            </label>
-            <label>
-              سبب الإجراء الموضح للعميل
-              <textarea
-                aria-label="سبب الإجراء الموضح للعميل"
-                required
-                minLength={5}
-                maxLength={240}
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setReviewed(false);
-                }}
-              />
-            </label>
+            {target.action !== 'reply' && (
+              <label>
+                مرجع إجراء الإرجاع
+                <input
+                  aria-label="مرجع إجراء الإرجاع"
+                  required
+                  minLength={3}
+                  maxLength={100}
+                  value={reference}
+                  onChange={(e) => {
+                    setReference(e.target.value);
+                    setReviewed(false);
+                  }}
+                />
+              </label>
+            )}
+            {['report', 'reply'].includes(target.action) && (
+              <label>
+                {target.action === 'reply' ? 'رد المتجر بعد الفحص' : 'وصف تعثر الاستلام أو النقل'}
+                <textarea
+                  aria-label={
+                    target.action === 'reply' ? 'رد المتجر بعد الفحص' : 'وصف تعثر الاستلام أو النقل'
+                  }
+                  required
+                  minLength={5}
+                  maxLength={target.action === 'reply' ? 500 : 240}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReviewed(false);
+                  }}
+                />
+              </label>
+            )}
             <label className="transfer-review">
               <input
                 type="checkbox"
@@ -343,7 +355,7 @@ export function CommercialReturns({
                 )
                 .join(' · ')}
             </p>
-            {r.decisionReason && <p>رد المتجر: {r.decisionReason}</p>}
+            {r.inspectionReply && <p>رد المتجر بعد الفحص: {r.inspectionReply}</p>}
             {r.courierId && (
               <p>
                 المندوب: {r.courierName} · الاستلام من: {r.collectionAddress} · الإرجاع إلى:{' '}
@@ -367,6 +379,15 @@ export function CommercialReturns({
               <p className="scope-note">
                 استُلمت الكميات؛ نتيجة الفحص وحالة رد المال موضحتان أدناه.
               </p>
+            )}
+            {account.role === 'merchant' && r.inspectionComplete && !r.inspectionReply && (
+              <button
+                className="button primary"
+                disabled={locked || !!target}
+                onClick={() => open(r, 'reply')}
+              >
+                إرسال رد المتجر بعد الفحص
+              </button>
             )}
             <RefundPanel
               r={r}
@@ -463,6 +484,7 @@ export function CommercialReturns({
                           pickup: 'استلام المندوب',
                           receive: 'استلام المنشأ والعزل',
                           report: 'بلاغ تعثر',
+                          reply: 'رد المتجر بعد الفحص',
                           assignment_expired: 'انتهاء مهلة القبول',
                           'refund.request': 'اعتماد رد البضائع',
                           'refund.reserve': 'حجز تمويل العميل',

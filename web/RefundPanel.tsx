@@ -74,7 +74,7 @@ export function RefundPanel({
       amountMinor: parseCash(amount),
       currency: 'SYP',
       reference,
-      reason,
+      reason: target.action === 'report' ? reason : labels[target.action],
     });
     if (!pending.current) pending.current = { body, key: key() };
     try {
@@ -137,6 +137,9 @@ export function RefundPanel({
         جميع القطع وتمويل موثق؛ لا يعني استلام البضاعة رد المال.
       </p>
       {f && <strong>{refundLabels[f.status]}</strong>}
+      {r.inspectionComplete && !r.inspectionReply && account?.role === 'merchant' && (
+        <p>أرسل رد المتجر بعد الفحص أولًا، ثم اعتمد مبلغ الرد.</p>
+      )}
       {!r.inspectionComplete && <p>أكمل فحص جميع القطع في شاشة المخزون قبل اعتماد الرد.</p>}
       {f?.issueOpen && (
         <p className="alert">
@@ -155,7 +158,11 @@ export function RefundPanel({
             <button
               key={action}
               className="button secondary"
-              disabled={busy || disabled || (action === 'request' && !r.inspectionComplete)}
+              disabled={
+                busy ||
+                disabled ||
+                (action === 'request' && (!r.inspectionComplete || !r.inspectionReply))
+              }
               onClick={() => open(action)}
             >
               {labels[action]}
@@ -203,20 +210,22 @@ export function RefundPanel({
                 }}
               />
             </label>
-            <label>
-              سبب إقرار رد العميل
-              <input
-                aria-label="سبب إقرار رد العميل"
-                minLength={3}
-                maxLength={240}
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setReviewed(false);
-                  pending.current = null;
-                }}
-              />
-            </label>
+            {target.action === 'report' && (
+              <label>
+                وصف فرق المبلغ
+                <textarea
+                  aria-label="وصف فرق المبلغ"
+                  minLength={3}
+                  maxLength={240}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReviewed(false);
+                    pending.current = null;
+                  }}
+                />
+              </label>
+            )}
             <label className="transfer-review">
               <input
                 type="checkbox"
@@ -233,8 +242,8 @@ export function RefundPanel({
                 : `أدخل كامل قيمة البضائع: ${cashMoney(expected)}.`
               : reference.trim().length < 3
                 ? 'اكتب مرجعًا من ثلاثة أحرف على الأقل.'
-                : reason.trim().length < 3
-                  ? 'اكتب سببًا من ثلاثة أحرف على الأقل.'
+                : target.action === 'report' && reason.trim().length < 3
+                  ? 'اكتب وصف الفرق من ثلاثة أحرف على الأقل.'
                   : !reviewed
                     ? 'ضع علامة الإقرار لإتاحة التأكيد.'
                     : 'اكتملت البيانات المطلوبة.'}
@@ -246,7 +255,7 @@ export function RefundPanel({
                 busy ||
                 !valid ||
                 reference.trim().length < 3 ||
-                reason.trim().length < 3 ||
+                (target.action === 'report' && reason.trim().length < 3) ||
                 !reviewed
               }
             >

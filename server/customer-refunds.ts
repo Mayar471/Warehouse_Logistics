@@ -113,8 +113,9 @@ export function registerRefunds(
             shipment_id: string;
             goods_minor: number;
             merchant_id: string;
+            inspection_reply: string | null;
           }>(
-            'SELECT status,version,shipment_id,goods_minor::double precision,merchant_id FROM commercial_returns WHERE id=$1 AND ($2::text IS NULL OR merchant_id=$2)',
+            'SELECT status,version,shipment_id,goods_minor::double precision,merchant_id,inspection_reply FROM commercial_returns WHERE id=$1 AND ($2::text IS NULL OR merchant_id=$2)',
             [id, a.role === 'merchant' ? a.merchantId : null],
           )
         ).rows[0];
@@ -157,6 +158,12 @@ export function registerRefunds(
             409,
             'INSPECTION_PENDING',
             'أكمل فحص جميع القطع قبل اعتماد الرد',
+          );
+          assert(
+            r.inspection_reply,
+            409,
+            'MERCHANT_REPLY_REQUIRED',
+            'أرسل رد المتجر بعد الفحص قبل اعتماد الرد المالي',
           );
           const collection = (
             await tx.query<{ goods: number }>(

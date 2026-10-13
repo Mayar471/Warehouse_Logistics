@@ -69,7 +69,7 @@ export async function refundFixture(path?: string) {
   }
   const inspect = async () => {
     const shipment = (await f.get(`/api/shipments/${source}`)).json().shipment;
-    return f.post(
+    const inspected = await f.post(
       `/api/inventory/returns/${source}/inspect`,
       {
         expectedVersion: shipment.version,
@@ -78,6 +78,21 @@ export async function refundFixture(path?: string) {
       },
       'merchant-a',
     );
+    if (inspected.statusCode === 200) {
+      const reply = await f.post(
+        `/api/commercial-returns/${r.id}/actions`,
+        {
+          action: 'reply',
+          expectedVersion: r.version,
+          reference: 'رد بعد الفحص',
+          reply: 'بعد الفحص نقبل رد قيمة البضائع كاملة للعميل',
+        },
+        'merchant-a',
+      );
+      assert.equal(reply.statusCode, 200, reply.body);
+      Object.assign(r, reply.json());
+    }
+    return inspected;
   };
   const refundBody = (
     action: string,

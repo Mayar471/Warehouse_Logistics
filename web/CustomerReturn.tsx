@@ -37,7 +37,7 @@ export function CustomerReturn({
       ...(target.action === 'request'
         ? { expectedShipmentVersion: target.version }
         : { expectedReturnVersion: target.version }),
-      reason,
+      ...(target.action === 'request' ? { reason } : {}),
     });
     if (!pending.current || pending.current.body !== body) pending.current = { body, key: key() };
     submitting.current = true;
@@ -83,7 +83,7 @@ export function CustomerReturn({
         <>
           <strong>{commercialReturnLabels[r.status]}</strong>
           <p>سبب طلبك: {r.reason}</p>
-          {r.decisionReason && <p>رد المتجر: {r.decisionReason}</p>}
+          {r.inspectionReply && <p>رد المتجر بعد الفحص: {r.inspectionReply}</p>}
         </>
       ) : (
         <p>
@@ -134,25 +134,27 @@ export function CustomerReturn({
             </p>
           )}
           <fieldset disabled={locked}>
-            <label>
-              سبب{' '}
-              {target.action === 'request'
-                ? 'الإرجاع'
-                : target.action === 'handover'
-                  ? 'إقرار التسليم'
-                  : 'سحب الإرجاع'}
-              <textarea
-                aria-label="سبب طلب الإرجاع"
-                minLength={5}
-                maxLength={500}
-                required
-                value={reason}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  setReviewed(false);
-                }}
-              />
-            </label>
+            {target.action === 'request' && (
+              <label>
+                سبب{' '}
+                {target.action === 'request'
+                  ? 'الإرجاع'
+                  : target.action === 'handover'
+                    ? 'إقرار التسليم'
+                    : 'سحب الإرجاع'}
+                <textarea
+                  aria-label="سبب طلب الإرجاع"
+                  minLength={5}
+                  maxLength={500}
+                  required
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReviewed(false);
+                  }}
+                />
+              </label>
+            )}
             <label className="transfer-review">
               <input
                 type="checkbox"

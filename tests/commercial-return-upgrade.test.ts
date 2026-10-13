@@ -39,6 +39,9 @@ test('schema 18 approved return survives migration and restart without new stock
     const stock = await f.stock(),
       cash = (await f.view()).json();
     await restoreCashSchema19(f.db);
+    await f.db.exec(
+      'ALTER TABLE commercial_returns DROP COLUMN inspection_reply CASCADE,DROP COLUMN inspection_replied_at; DELETE FROM schema_migrations WHERE version=21;',
+    );
     await f.db.exec(`
       ALTER TABLE commercial_returns DROP CONSTRAINT commercial_return_status;
       ALTER TABLE commercial_returns DROP CONSTRAINT commercial_return_review;

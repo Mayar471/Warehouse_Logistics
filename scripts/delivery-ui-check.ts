@@ -190,14 +190,10 @@ try {
   await merchant.getByRole('button', { name: 'مرتجعات العملاء', exact: true }).click();
   await merchant.getByRole('button', { name: 'قبول طلب الإرجاع', exact: true }).click();
   await merchant.getByLabel('مرجع إجراء الإرجاع').fill('قرار تجريبي 123');
-  await merchant
-    .getByLabel('سبب الإجراء الموضح للعميل')
-    .fill('قبول طلب الإرجاع لتنظيم استلام البضاعة');
+  assert.equal(await merchant.getByLabel('سبب الإجراء الموضح للعميل').count(), 0);
   await merchant.getByLabel('راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.').check();
   await merchant.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
-  await customer
-    .getByText('رد المتجر: قبول طلب الإرجاع لتنظيم استلام البضاعة', { exact: true })
-    .waitFor({ timeout: 15000 });
+  assert.equal(await customer.getByText(/رد المتجر بعد الفحص:/).count(), 0);
   assert.equal(await customer.locator('.shop-progress .done').count(), 5);
   await observer.getByRole('button', { name: 'إغلاق النافذة' }).click();
   await observer.getByRole('button', { name: 'مرتجعات العملاء', exact: true }).click();
@@ -206,7 +202,7 @@ try {
   await observer.getByLabel('مكان استلام المرتجع').fill('دمشق، الروضة، عنوان العميل المتفق عليه');
   async function confirmReturn(p: typeof observer, waitForClose = true) {
     await p.getByLabel('مرجع إجراء الإرجاع').fill('محضر إرجاع 123');
-    await p.getByLabel('سبب الإجراء الموضح للعميل').fill('تأكيد الإجراء الفعلي لكامل منتجات الطلب');
+    assert.equal(await p.getByLabel('سبب الإجراء الموضح للعميل').count(), 0);
     await p.getByLabel('راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.').check();
     await p.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
     if (waitForClose) await p.locator('.inventory-form').waitFor({ state: 'detached' });
@@ -247,7 +243,7 @@ try {
     .getByRole('button', { name: 'تأكيد تسليم المرتجع للمندوب', exact: true })
     .waitFor({ timeout: 15000 });
   await customer.getByRole('button', { name: 'تأكيد تسليم المرتجع للمندوب', exact: true }).click();
-  await customer.getByLabel('سبب طلب الإرجاع').fill('سلمت جميع المنتجات فعليًا للمندوب المكلف');
+  assert.equal(await customer.getByLabel('سبب طلب الإرجاع').count(), 0);
   await customer.getByLabel('راجعت طلب الإرجاع وأؤكد تسجيله لطلبي.').check();
   await customer.getByRole('button', { name: 'تسجيل تسليم المرتجع', exact: true }).click();
   await returning
@@ -318,12 +314,23 @@ try {
     },
     'ops',
   );
+  await merchant.getByRole('button', { name: 'إرسال رد المتجر بعد الفحص', exact: true }).click();
+  await merchant
+    .getByLabel('رد المتجر بعد الفحص')
+    .fill('بعد الفحص نوافق على رد كامل قيمة البضائع للعميل');
+  await merchant.getByLabel('راجعت الإجراء والكميات والعهدة وأؤكد تسجيله باسم حسابي.').check();
+  await merchant.getByRole('button', { name: 'تأكيد إجراء الإرجاع', exact: true }).click();
+  await customer
+    .getByText('رد المتجر بعد الفحص: بعد الفحص نوافق على رد كامل قيمة البضائع للعميل', {
+      exact: true,
+    })
+    .waitFor({ timeout: 15000 });
   const refundAmount = String(shipment.collection.goodsMinor / 100);
   async function fillRefund(p: typeof merchant) {
     const panel = p.getByLabel('رد أموال العميل');
     await panel.getByLabel('مبلغ رد العميل').fill(refundAmount);
     await panel.getByLabel('مرجع إقرار رد العميل').fill('إيصال رد 123');
-    await panel.getByLabel('سبب إقرار رد العميل').fill('إقرار فعلي برد قيمة البضائع كاملة');
+    assert.equal(await panel.getByLabel('سبب إقرار رد العميل').count(), 0);
     await panel.getByLabel('راجعت المبلغ وأؤكد إقرار رد العميل باسم حسابي.').check();
   }
   await merchant.getByRole('button', { name: 'اعتماد رد قيمة البضائع', exact: true }).click();

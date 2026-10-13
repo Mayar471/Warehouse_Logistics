@@ -59,3 +59,7 @@ API failures contain `code`, `message`, `requestId`, and optionally validation `
 Backend checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check`. Current handoff was verified with 119 regression tests, two additional commercial-return tests and an isolated pickup COD browser journey including 1440/390/360 layouts. Tests do not establish production readiness or load targets.
 
 Use `feature/flutter-foundation` for the first mobile branch and submit a pull request against `main`. Keep backend contract changes in separate reviewed commits with matching tests. No production credentials, local databases, generated build files, emulator data or signing keys belong in Git. The backend creates fresh local demo data and secrets on first run; existing developer-local orders are not shipped in this repository.
+
+## Return UX update — 13 October 2026
+
+The client enters the return reason once. Ordinary transport confirmations no longer require repeating it. Merchant intake approval is separate from the final inspection response. After all pieces have been inspected, the owner merchant sends action `reply` with `expectedVersion`, `reference` and `reply`. Display `inspectionReply` to the customer; require this response before the merchant refund request. Read `docs/RETURN-REASON-AND-MERCHANT-REPLY.md`. Financial `reason` fields may be generated from the confirmed action; collect a human incident description only for genuine discrepancy/report flows.

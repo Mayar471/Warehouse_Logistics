@@ -1,3 +1,4 @@
+import { returnAuditNotes } from '../shared/commercial-returns.js';
 import { refundJson } from './customer-refunds.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Transaction } from './db.js';
@@ -14,7 +15,7 @@ import {
   loadShipment,
   appendEvent,
 } from './domain.js';
-export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",s.recipient_name AS "recipientName",COALESCE((SELECT MAX(e.created_at) FROM commercial_return_events e WHERE e.return_id=r.id),r.created_at) AS "updatedAt",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen",${refundJson} AS refund,(r.status='received' AND EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id) AND NOT EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id AND i.quantity<>i.restocked_quantity+i.discarded_quantity)) AS "inspectionComplete" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
+export const commercialReturnSelect = `SELECT r.id,r.shipment_id AS "shipmentId",s.reference AS "shipmentReference",s.recipient_name AS "recipientName",COALESCE((SELECT MAX(e.created_at) FROM commercial_return_events e WHERE e.return_id=r.id),r.created_at) AS "updatedAt",r.merchant_id AS "merchantId",m.name AS "merchantName",r.status,r.version,r.items,r.goods_minor::double precision AS "goodsMinor",r.currency,r.reason,r.inspection_reply AS "inspectionReply",r.inspection_replied_at AS "inspectionRepliedAt",r.decision_reason AS "decisionReason",r.created_at AS "createdAt",r.reviewed_at AS "reviewedAt",r.cancelled_at AS "cancelledAt",r.courier_id AS "courierId",c.name AS "courierName",o.name AS "originName",r.collection_address AS "collectionAddress",r.assignment_expires_at AS "assignmentExpiresAt",r.accepted_at AS "acceptedAt",r.released_at AS "releasedAt",r.picked_up_at AS "pickedUpAt",r.received_at AS "receivedAt",r.issue_open AS "issueOpen",${refundJson} AS refund,(r.status='received' AND EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id) AND NOT EXISTS(SELECT 1 FROM inventory_reservations i WHERE i.shipment_id=r.shipment_id AND i.quantity<>i.restocked_quantity+i.discarded_quantity)) AS "inspectionComplete" FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id JOIN merchants m ON m.id=r.merchant_id JOIN sites o ON o.id=s.origin_id LEFT JOIN couriers c ON c.id=r.courier_id`;
 export async function returnEvent(
   tx: Transaction,
   id: string,
@@ -124,19 +125,21 @@ export function registerCommercialReturns(
             'pickup',
             'receive',
             'report',
+            'reply',
           ]),
           courierId: z.string().min(1).max(40).optional(),
           collectionAddress: z.string().trim().min(10).max(240).optional(),
           expectedVersion: z.number().int().positive(),
           reference: z.string().trim().min(3).max(100),
-          reason: z.string().trim().min(5).max(240),
+          reason: z.string().trim().min(5).max(240).optional(),
+          reply: z.string().trim().min(5).max(500).optional(),
         })
         .strict()
         .parse(req.body),
       key = z.string().min(8).max(128).parse(req.headers['idempotency-key']);
     return write((tx) =>
       idempotent(tx, `${a.id}:commercial-return:${id}`, key, b, async () => {
-        const expectedRole = ['approve', 'reject', 'receive'].includes(b.action)
+        const expectedRole = ['approve', 'reject', 'receive', 'reply'].includes(b.action)
           ? 'merchant'
           : ['assign', 'unassign'].includes(b.action)
             ? 'operator'
@@ -171,16 +174,58 @@ export function registerCommercialReturns(
           'VERSION_CONFLICT',
           'تغير طلب الإرجاع؛ حدّث القراءة وراجع الإجراء',
         );
+        assert(
+          b.action === 'reply' || b.reply === undefined,
+          422,
+          'INVALID_FIELDS',
+          'رد المتجر متاح بعد الفحص فقط',
+        );
+        const auditNote = b.reason ?? returnAuditNotes[b.action] ?? 'بلاغ تعثر المرتجع';
         const now = new Date(clock()).toISOString();
         let status = r.status;
         const clear =
           'courier_id=NULL,assignment_expires_at=NULL,accepted_at=NULL,issue_open=false';
-        if (b.action === 'approve' || b.action === 'reject') {
+        if (b.action === 'reply') {
+          assert(
+            r.status === 'received' && b.reply,
+            409,
+            'REPLY_NOT_READY',
+            'يلزم وصول المرتجع ورد المتجر بعد الفحص',
+          );
+          const state = (
+            await tx.query<{ inspection_reply: string | null }>(
+              'SELECT inspection_reply FROM commercial_returns WHERE id=$1',
+              [id],
+            )
+          ).rows[0];
+          assert(!state.inspection_reply, 409, 'REPLY_EXISTS', 'رد المتجر مسجل ومحفوظ');
+          const lines = (
+            await tx.query<{
+              quantity: number;
+              restocked_quantity: number;
+              discarded_quantity: number;
+            }>(
+              'SELECT quantity,restocked_quantity,discarded_quantity FROM inventory_reservations WHERE shipment_id=$1',
+              [r.shipment_id],
+            )
+          ).rows;
+          assert(
+            lines.length > 0 &&
+              lines.every((l) => l.quantity === l.restocked_quantity + l.discarded_quantity),
+            409,
+            'INSPECTION_PENDING',
+            'أكمل فحص جميع القطع قبل رد المتجر',
+          );
+          await tx.query(
+            'UPDATE commercial_returns SET inspection_reply=$2,inspection_replied_at=$3,version=version+1 WHERE id=$1',
+            [id, b.reply, now],
+          );
+        } else if (b.action === 'approve' || b.action === 'reject') {
           assert(r.status === 'requested', 409, 'INVALID_STATE', 'طلب الإرجاع لا ينتظر مراجعة');
           status = b.action === 'approve' ? 'approved' : 'rejected';
           await tx.query(
             'UPDATE commercial_returns SET status=$2,version=version+1,decision_reason=$3,reviewed_at=$4 WHERE id=$1',
-            [id, status, b.reason, now],
+            [id, status, auditNote, now],
           );
         } else if (b.action === 'assign') {
           assert(
@@ -318,6 +363,7 @@ export function registerCommercialReturns(
             [id, now],
           );
         } else {
+          assert(b.reason, 422, 'ISSUE_NOTE_REQUIRED', 'اكتب وصف التعثر؛ لا تعِد سبب إرجاع العميل');
           assert(
             ['accepted', 'released', 'in_transit'].includes(r.status),
             409,
@@ -329,7 +375,7 @@ export function registerCommercialReturns(
             [id],
           );
         }
-        await returnEvent(tx, id, b.action, a.id, a.name, b.reference, b.reason);
+        await returnEvent(tx, id, b.action, a.id, a.name, b.reference, auditNote);
         return { id, status, version: r.version + 1 };
       }),
     );

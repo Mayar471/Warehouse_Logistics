@@ -35,7 +35,7 @@
 
 `GET /api/commercial-returns` يعرض الحالات والمهام والسجل بحسب الدور، مع إجماليات مراجعة ومقبولة ونشطة ومستلمة. تتلقى العمليات قائمة المندوبين وسعاتهم الحالية؛ غير العمليات لا تتلقى هذه القائمة من هذا المسار.
 
-`POST /api/commercial-returns/:id/actions` يتطلب `action`, `expectedVersion`, `reference` من ثلاثة أحرف على الأقل و`reason` من خمسة أحرف. الإسناد وحده يقبل `courierId` و`collectionAddress`. كل أمر يتطلب `Idempotency-Key`؛ رأس `X-Review-Actor` يحمي تغير حساب واجهة العرض. رفض الإصدار القديم 409؛ الدور المخالف 403؛ المهمة خارج النطاق 404.
+`POST /api/commercial-returns/:id/actions` يتطلب `action`, `expectedVersion`, `reference` من ثلاثة أحرف على الأقل و`reason` من خمسة أحرف عند الإبلاغ عن تعثر؛ التأكيدات العادية تسجل وصفًا تلقائيًا. رد المتجر النهائي بعد الفحص ضمن [ترحيل 21](./RETURN-REASON-AND-MERCHANT-REPLY.md). الإسناد وحده يقبل `courierId` و`collectionAddress`. كل أمر يتطلب `Idempotency-Key`؛ رأس `X-Review-Actor` يحمي تغير حساب واجهة العرض. رفض الإصدار القديم 409؛ الدور المخالف 403؛ المهمة خارج النطاق 404.
 
 `POST /api/storefront/orders/:shipmentId/returns` يقبل `handover` مع `expectedReturnVersion` و`reason` من مالك جلسة العميل. يظل طلب الإرجاع الأول يستخدم `request` مع `expectedShipmentVersion`. DTO في `shared/commercial-returns.ts`؛ لا يظهر رمز تسليم العميل الأصلي في مسار إرجاع البضاعة ولا يُعاد استعماله.
 

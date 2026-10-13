@@ -448,6 +448,27 @@ export async function openDatabase(path?: string) {
       CREATE UNIQUE INDEX customer_refund_journal ON cash_journals(refund_id,kind) WHERE refund_id IS NOT NULL;
       INSERT INTO schema_migrations(version) VALUES(20);
     END IF; END $$;
+    DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=21) THEN
+      ALTER TABLE commercial_returns ADD COLUMN inspection_reply text;
+      ALTER TABLE commercial_returns ADD COLUMN inspection_replied_at timestamptz;
+      ALTER TABLE commercial_returns ADD CONSTRAINT commercial_inspection_reply CHECK((inspection_reply IS NULL AND inspection_replied_at IS NULL) OR (status='received' AND inspection_reply IS NOT NULL AND char_length(trim(inspection_reply)) BETWEEN 5 AND 500 AND inspection_replied_at IS NOT NULL));
+      CREATE OR REPLACE FUNCTION guard_commercial_return() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN
+        IF TG_OP='DELETE' OR (to_jsonb(OLD)-ARRAY['status','version','reviewed_at','cancelled_at','decision_reason','courier_id','collection_address','assignment_expires_at','accepted_at','released_at','picked_up_at','received_at','issue_open','inspection_reply','inspection_replied_at'])<>(to_jsonb(NEW)-ARRAY['status','version','reviewed_at','cancelled_at','decision_reason','courier_id','collection_address','assignment_expires_at','accepted_at','released_at','picked_up_at','received_at','issue_open','inspection_reply','inspection_replied_at']) OR NEW.version<>OLD.version+1 OR NOT (
+          (OLD.status='requested' AND NEW.status IN ('approved','rejected','cancelled')) OR
+          (OLD.status='approved' AND NEW.status IN ('assigned','cancelled')) OR
+          (OLD.status='assigned' AND NEW.status IN ('accepted','approved','cancelled')) OR
+          (OLD.status='accepted' AND NEW.status IN ('released','approved','cancelled','accepted')) OR
+          (OLD.status='released' AND NEW.status IN ('in_transit','released')) OR
+          (OLD.status='in_transit' AND NEW.status IN ('received','in_transit')) OR (OLD.status='received' AND NEW.status='received' AND OLD.inspection_reply IS NULL AND NEW.inspection_reply IS NOT NULL)
+        ) THEN RAISE EXCEPTION 'Commercial return history is protected' USING ERRCODE='23514'; END IF;
+        IF OLD.reviewed_at IS NOT NULL AND (NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason) THEN RAISE EXCEPTION 'Return review is immutable' USING ERRCODE='23514'; END IF;
+        IF OLD.released_at IS NOT NULL AND (NEW.released_at IS DISTINCT FROM OLD.released_at OR NEW.courier_id IS DISTINCT FROM OLD.courier_id OR NEW.collection_address IS DISTINCT FROM OLD.collection_address OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at) THEN RAISE EXCEPTION 'Return custody is protected' USING ERRCODE='23514'; END IF;
+        IF OLD.picked_up_at IS NOT NULL AND NEW.picked_up_at IS DISTINCT FROM OLD.picked_up_at THEN RAISE EXCEPTION 'Return pickup is immutable' USING ERRCODE='23514'; END IF;
+        IF OLD.inspection_reply IS NOT NULL AND (NEW.inspection_reply IS DISTINCT FROM OLD.inspection_reply OR NEW.inspection_replied_at IS DISTINCT FROM OLD.inspection_replied_at) THEN RAISE EXCEPTION 'Final merchant reply is protected' USING ERRCODE='23514'; END IF;
+        RETURN NEW;
+      END $f$;
+      INSERT INTO schema_migrations(version) VALUES(21);
+    END IF; END $$;
     CREATE TABLE IF NOT EXISTS delivery_proofs (shipment_id uuid PRIMARY KEY REFERENCES shipments(id),code_hash text NOT NULL,expires_at timestamptz NOT NULL,issued_at timestamptz NOT NULL,attempts integer NOT NULL DEFAULT 0,consumed_at timestamptz);
     CREATE TABLE IF NOT EXISTS demo_settings (id integer PRIMARY KEY CHECK(id=1), webhook_paused boolean NOT NULL DEFAULT false);
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
