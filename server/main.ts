@@ -30,6 +30,7 @@ const { app, flushOutbox, sweepAssignments } = buildApp(db, {
   demoMode: true,
   logger: true,
   receiverUrl: `http://127.0.0.1:${port}/api/demo-commerce/webhook`,
+  allowedOrigins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
 });
 if (process.env.SERVE_WEB === 'true') {
   await app.register(staticFiles, {

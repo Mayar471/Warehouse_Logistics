@@ -138,6 +138,33 @@ test('operations cannot request merchant transport through the commerce BFF', as
   }
 });
 
+test('configured local preview origin works without allowing unrelated origins', async () => {
+  const previewDb = await openDatabase('memory://');
+  const preview = buildApp(previewDb, {
+    applicationKey,
+    webhookKey,
+    demoMode: true,
+    allowedOrigins: ['http://localhost:3002'],
+  });
+  try {
+    for (const [origin, expected] of [
+      ['http://localhost:3002', 200],
+      ['https://untrusted.example', 403],
+    ] as const) {
+      const response = await preview.app.inject({
+        method: 'POST',
+        url: '/api/demo/session',
+        headers: { origin },
+        payload: { accountId: 'ops' },
+      });
+      assert.equal(response.statusCode, expected);
+    }
+  } finally {
+    await preview.app.close();
+    await previewDb.close();
+  }
+});
+
 test('commerce BFF cannot create quotes for another merchant', async () => {
   const r = await system.app.inject({
     method: 'POST',

@@ -110,6 +110,7 @@ export function buildApp(
     logger?: boolean;
     clock?: () => number;
     receiverUrl?: string;
+    allowedOrigins?: string[];
     transport?: (raw: string, headers: Record<string, string>) => Promise<number>;
   },
 ) {
@@ -149,6 +150,7 @@ export function buildApp(
     'http://localhost:5173',
     'http://127.0.0.1:3001',
     'http://localhost:3001',
+    ...(options.allowedOrigins ?? []),
   ]);
 
   app.addHook('onRequest', async (req, reply) => {
