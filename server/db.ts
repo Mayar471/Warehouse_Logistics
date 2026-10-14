@@ -488,6 +488,24 @@ export async function openDatabase(path?: string) {
     INSERT INTO demo_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
     INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING;
   `);
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_companies(id text PRIMARY KEY,name text NOT NULL,address text NOT NULL,latitude double precision NOT NULL CHECK(latitude BETWEEN -85 AND 85),longitude double precision NOT NULL CHECK(longitude BETWEEN -180 AND 180),version integer NOT NULL DEFAULT 1);
+    ALTER TABLE couriers ADD COLUMN IF NOT EXISTS company_id text REFERENCES delivery_companies(id);
+    ALTER TABLE couriers ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+    ALTER TABLE couriers ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+    ALTER TABLE sites ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+    ALTER TABLE delivery_service_subjects ADD COLUMN IF NOT EXISTS settlement_company_id text REFERENCES delivery_companies(id);
+    ALTER TABLE delivery_service_subjects ADD COLUMN IF NOT EXISTS settlement_name text;
+    CREATE TABLE IF NOT EXISTS partner_audit(id uuid PRIMARY KEY,entity_id text NOT NULL,actor_name text NOT NULL,action text NOT NULL,details jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+    INSERT INTO schema_migrations(version) VALUES(24) ON CONFLICT DO NOTHING;
+    INSERT INTO schema_migrations(version) VALUES(25) ON CONFLICT DO NOTHING;
+    ALTER TABLE couriers ADD COLUMN IF NOT EXISTS rate_bps integer CHECK(rate_bps BETWEEN 0 AND 10000);
+    ALTER TABLE delivery_companies ADD COLUMN IF NOT EXISTS rate_bps integer CHECK(rate_bps BETWEEN 0 AND 10000);
+    CREATE TABLE IF NOT EXISTS execution_terms(shipment_id uuid PRIMARY KEY REFERENCES shipments(id),courier_id text NOT NULL REFERENCES couriers(id),company_id text REFERENCES delivery_companies(id),beneficiary_name text NOT NULL,rate_bps integer CHECK(rate_bps BETWEEN 0 AND 10000),assignment_version integer NOT NULL);
+    CREATE TABLE IF NOT EXISTS execution_earnings(shipment_id uuid PRIMARY KEY REFERENCES shipments(id),courier_id text NOT NULL REFERENCES couriers(id),company_id text REFERENCES delivery_companies(id),beneficiary_name text NOT NULL,rate_bps integer CHECK(rate_bps BETWEEN 0 AND 10000),fee_minor integer NOT NULL CHECK(fee_minor>=0),amount_minor bigint CHECK(amount_minor>=0),currency text NOT NULL CHECK(currency='SYP'),earned_at timestamptz NOT NULL, CHECK((rate_bps IS NULL)=(amount_minor IS NULL)));
+    DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='execution_earnings_immutable') THEN CREATE TRIGGER execution_earnings_immutable BEFORE UPDATE OR DELETE ON execution_earnings FOR EACH ROW EXECUTE FUNCTION protect_service_rating(); END IF; END $$;
+    INSERT INTO schema_migrations(version) VALUES(26) ON CONFLICT DO NOTHING;
+  `);
   await seed(db);
   await db.transaction(async (tx) => {
     for (const product of catalog) {
@@ -518,7 +536,7 @@ async function seed(db: PGlite) {
       ('site-b','متجر نواة','دمشق','المزة، دمشق','store','merchant-b'),
       ('hub-a','مركز التجميع الرئيسي','دمشق','كفرسوسة، دمشق','hub',NULL),
       ('pickup-a','نقطة استلام الروضة','دمشق','الروضة، دمشق','pickup',NULL)`);
-    await tx.query(`INSERT INTO couriers VALUES
+    await tx.query(`INSERT INTO couriers(id,name,vehicle,capacity_kg,available) VALUES
       ('courier-a','أحمد منصور','دراجة نارية',12,true),
       ('courier-b','لينا الخطيب','سيارة صغيرة',50,true),
       ('courier-c','سامر الحسن','سيارة نقل',100,false)`);

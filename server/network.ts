@@ -5,13 +5,18 @@ import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
 import { assert, idempotent, transactionGate } from './domain.js';
 import { coordinatesSchema } from './customer-locations.js';
+import { registerDeliveryPartners } from './delivery-partners.js';
+import { registerPartnerRemoval } from './partner-removal.js';
 
 export function registerNetwork(
   app: FastifyInstance,
   db: PGlite,
   write: ReturnType<typeof transactionGate>,
   operator: (req: FastifyRequest) => Account,
+  onRemoved: (kind: string, id: string, merchantId: string | null) => void,
 ) {
+  registerDeliveryPartners(app, db, write, operator);
+  registerPartnerRemoval(app, db, write, operator, onRemoved);
   const fields = {
     name: z.string().trim().min(3).max(80),
     address: z.string().trim().min(5).max(130),
@@ -27,7 +32,7 @@ export function registerNetwork(
     return {
       audit: (
         await db.query(
-          'SELECT id,site_id AS "siteId",actor_name AS "actorName",action,reason,details,created_at AS "createdAt" FROM network_audit ORDER BY created_at DESC,id LIMIT 20',
+          'SELECT * FROM (SELECT id,site_id AS "siteId",actor_name AS "actorName",action,reason,details,created_at AS "createdAt" FROM network_audit UNION ALL SELECT id,entity_id AS "siteId",actor_name AS "actorName",action,\'تحديث بيانات الشريك\' AS reason,details,created_at AS "createdAt" FROM partner_audit) history ORDER BY "createdAt" DESC,id LIMIT 20',
         )
       ).rows,
     };
@@ -95,7 +100,7 @@ export function registerNetwork(
             pickup_enabled: boolean;
             latitude: number | null;
             longitude: number | null;
-          }>("SELECT * FROM sites WHERE id=$1 AND kind='pickup'", [id])
+          }>("SELECT * FROM sites WHERE id=$1 AND kind='pickup' AND archived_at IS NULL", [id])
         ).rows[0];
         assert(site, 404, 'NOT_FOUND', 'نقطة الاستلام غير موجودة');
         assert(

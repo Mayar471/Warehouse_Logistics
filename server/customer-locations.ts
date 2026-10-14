@@ -14,7 +14,7 @@ export const coordinatesSchema = z
     longitude: z.number().finite().min(-180).max(180),
   })
   .strict();
-export const pickupOptionsSql = `SELECT s.id,s.name,s.address,s.latitude,s.longitude,COALESCE(r.count,0)::integer AS "ratingCount",r.rating FROM sites s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id WHERE s.kind='pickup' AND s.pickup_enabled AND s.city='دمشق'`;
+export const pickupOptionsSql = `SELECT s.id,s.name,s.address,s.latitude,s.longitude,COALESCE(r.count,0)::integer AS "ratingCount",r.rating FROM sites s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id WHERE s.archived_at IS NULL AND s.kind='pickup' AND s.pickup_enabled AND s.city='دمشق'`;
 export function registerCustomerLocations(
   app: FastifyInstance,
   write: ReturnType<typeof transactionGate>,

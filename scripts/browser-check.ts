@@ -19,18 +19,25 @@ try {
   await page.getByText('الشحنات الأخيرة', { exact: true }).waitFor();
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: resolve(output, '01-overview-desktop.png'), fullPage: true });
-  await page.getByRole('button', { name: 'إنشاء شحنة', exact: true }).click();
+  await page.getByLabel('حساب العرض').selectOption('merchant-a');
+  await page.getByRole('heading', { name: 'طلبات متجرك', exact: true }).waitFor();
+  await page.getByRole('navigation').getByRole('button', { name: 'الشحنات' }).click();
+  await page.getByRole('button', { name: 'طلب نقل طرد', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('اسم المستلم').fill('عميل رحلة المتصفح');
   await dialog.getByLabel('عنوان التسليم').fill('الروضة، شارع تجريبي، دمشق');
-  await dialog.getByRole('button', { name: 'عرض خيارات التوصيل' }).click();
-  await dialog.getByRole('button', { name: 'تأكيد طلب التنفيذ' }).waitFor();
+  await dialog.getByRole('button', { name: 'حساب تكلفة النقل' }).click();
+  await dialog.getByRole('button', { name: 'تأكيد طلب النقل' }).waitFor();
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/demo-commerce/orders') && r.request().method() === 'POST',
   );
-  await dialog.getByRole('button', { name: 'تأكيد طلب التنفيذ' }).click();
+  await dialog.getByRole('button', { name: 'تأكيد طلب النقل' }).click();
   const shipment = await (await created).json();
   assert.ok(shipment.id, JSON.stringify(shipment));
+  await page.getByRole('button', { name: 'إغلاق النافذة', exact: true }).click();
+  await page.getByLabel('حساب العرض').selectOption('ops');
+  await page.getByRole('heading', { name: 'مركز العمليات', exact: true }).waitFor();
+  await page.getByRole('button', { name: shipment.reference, exact: true }).click();
   await page.getByLabel('اختيار المندوب').selectOption('courier-b');
   await page.getByRole('button', { name: 'إسناد المهمة', exact: true }).click();
   await page.getByText('بانتظار قبول المهمة من حساب المندوب المكلف.', { exact: true }).waitFor();
@@ -89,7 +96,11 @@ try {
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     'Page overflows at 390px',
   );
-  await page.getByRole('button', { name: 'إنشاء شحنة', exact: true }).click();
+  await page.getByLabel('حساب العرض').selectOption('merchant-a');
+  await page.getByRole('heading', { name: 'طلبات متجرك', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'فتح القائمة', exact: true }).click();
+  await page.getByRole('navigation').getByRole('button', { name: 'الشحنات' }).click();
+  await page.getByRole('button', { name: 'طلب نقل طرد', exact: true }).click();
   await page.screenshot({
     path: resolve(output, '06-create-mobile.png'),
     fullPage: false,

@@ -155,7 +155,8 @@ export function Storefront() {
   const [cart, setCart] = useState<CartItem[]>(readCart);
   const [page, setPage] = useState<
     'browse' | 'product' | 'cart' | 'checkout' | 'orders' | 'success'
-  >('browse');
+  >(() => (new URLSearchParams(location.search).get('view') === 'orders' ? 'orders' : 'browse'));
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedProduct, setSelectedProduct] = useState<Product>(catalog[0]);
   const [category, setCategory] = useState('الكل');
   const [productType, setProductType] = useState('الكل');
@@ -258,6 +259,11 @@ export function Storefront() {
     heading.current?.focus();
     window.scrollTo({ top: 0, behavior: 'instant' });
     setError('');
+    setFieldErrors({});
+    const url = new URL(location.href);
+    if (page === 'orders' || page === 'success') url.searchParams.set('view', 'orders');
+    else url.searchParams.delete('view');
+    history.replaceState(null, '', url);
   }, [page]);
   useEffect(() => {
     if (!notice) return;
@@ -299,16 +305,22 @@ export function Storefront() {
   }
   async function getQuote(event: FormEvent) {
     event.preventDefault();
-    if (address.recipientName.trim().length < 2) {
-      setError('اكتب اسم المستلم من حرفين على الأقل.');
-      return;
-    }
-    if (deliveryMode === 'home' && address.address.trim().length < 5) {
-      setError('اكتب عنوانًا واضحًا من خمسة أحرف على الأقل.');
-      return;
-    }
-    if (deliveryMode === 'pickup' && !pickupSiteId) {
-      setError('اختر نقطة استلام أولًا.');
+    const errors: Record<string, string> = {};
+    if (address.recipientName.trim().length < 2)
+      errors.recipient = 'اكتب اسم المستلم من حرفين على الأقل.';
+    if (deliveryMode === 'home' && address.address.trim().length < 5)
+      errors.location = 'حدد عنوانًا محفوظًا أو موقعًا على الخريطة لإكمال التوصيل.';
+    if (deliveryMode === 'pickup' && !pickupSiteId) errors.location = 'اختر نقطة استلام أولًا.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      setError('');
+      requestAnimationFrame(() => {
+        const first = document.getElementById(
+          errors.recipient ? 'recipient-name' : 'delivery-location-group',
+        );
+        first?.focus();
+        first?.scrollIntoView({ block: 'center', behavior: 'auto' });
+      });
       return;
     }
     if (submitting.current) return;
@@ -1085,6 +1097,23 @@ export function Storefront() {
               </div>
             ) : (
               <div className="shop-checkout-layout">
+                <ol className="checkout-progress" aria-label="مراحل إتمام الطلب">
+                  {['السلة', 'الاستلام والدفع', 'مراجعة وتأكيد'].map((label, index) => {
+                    const current = page === 'cart' ? 0 : quote ? 2 : 1;
+                    return (
+                      <li
+                        key={label}
+                        className={
+                          index === current ? 'current' : index < current ? 'complete' : ''
+                        }
+                        aria-current={index === current ? 'step' : undefined}
+                      >
+                        <span>{index < current ? <CheckCircle2 size={18} /> : index + 1}</span>
+                        <strong>{label}</strong>
+                      </li>
+                    );
+                  })}
+                </ol>
                 <section className="shop-panel">
                   {page === 'cart' ? (
                     cart.map((item) => {
@@ -1160,16 +1189,25 @@ export function Storefront() {
                       <label>
                         اسم المستلم
                         <input
+                          id="recipient-name"
+                          aria-invalid={!!fieldErrors.recipient}
+                          aria-describedby={fieldErrors.recipient ? 'recipient-error' : undefined}
                           autoComplete="name"
                           required
                           minLength={2}
                           maxLength={80}
                           value={address.recipientName}
-                          onChange={(e) =>
-                            setAddress({ ...address, recipientName: e.target.value })
-                          }
+                          onChange={(e) => {
+                            setAddress({ ...address, recipientName: e.target.value });
+                            setFieldErrors((current) => ({ ...current, recipient: '' }));
+                          }}
                           placeholder="الاسم الكامل"
                         />
+                        {fieldErrors.recipient && (
+                          <small id="recipient-error" className="field-error" role="alert">
+                            {fieldErrors.recipient}
+                          </small>
+                        )}
                       </label>
                       <fieldset className="shop-delivery-choice">
                         <legend>كيف تود استلام الطلب؟</legend>
@@ -1199,27 +1237,44 @@ export function Storefront() {
                           </span>
                         </label>
                       </fieldset>
-                      <CustomerLocations
-                        key={deliveryMode}
-                        pickup={deliveryMode === 'pickup'}
-                        points={pickupSites}
-                        selectedPoint={pickupSiteId}
-                        initial={
-                          deliveryMode === 'home'
-                            ? {
-                                district: address.district,
-                                details: address.address,
-                                point: deliveryLocation,
-                              }
-                            : undefined
-                        }
-                        onPoint={setPickupSiteId}
-                        onAddress={(district, details, point) => {
-                          setAddress((current) => ({ ...current, district, address: details }));
-                          setDeliveryLocation(point);
-                          setQuote(null);
-                        }}
-                      />
+                      <div
+                        id="delivery-location-group"
+                        tabIndex={-1}
+                        role="group"
+                        aria-label="تحديد مكان الاستلام"
+                        aria-describedby={fieldErrors.location ? 'location-error' : undefined}
+                      >
+                        {fieldErrors.location && (
+                          <p id="location-error" className="field-error" role="alert">
+                            {fieldErrors.location}
+                          </p>
+                        )}
+                        <CustomerLocations
+                          key={deliveryMode}
+                          pickup={deliveryMode === 'pickup'}
+                          points={pickupSites}
+                          selectedPoint={pickupSiteId}
+                          initial={
+                            deliveryMode === 'home'
+                              ? {
+                                  district: address.district,
+                                  details: address.address,
+                                  point: deliveryLocation,
+                                }
+                              : undefined
+                          }
+                          onPoint={(id) => {
+                            setPickupSiteId(id);
+                            setFieldErrors((current) => ({ ...current, location: '' }));
+                          }}
+                          onAddress={(district, details, point) => {
+                            setAddress((current) => ({ ...current, district, address: details }));
+                            setDeliveryLocation(point);
+                            setQuote(null);
+                            setFieldErrors((current) => ({ ...current, location: '' }));
+                          }}
+                        />
+                      </div>
                       <p className="shop-field-note">
                         التجربة الحالية للتوصيل داخل دمشق. استخدم بيانات اصطناعية للعرض.
                       </p>

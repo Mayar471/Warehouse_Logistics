@@ -1,4 +1,6 @@
 import { registerRefunds } from './customer-refunds.js';
+import { registerShipmentSearch } from './shipment-search.js';
+import { registerExecutionEarnings } from './execution-earnings.js';
 import { registerNotifications } from './notifications.js';
 import { registerCommercialReturns, expireCommercialReturns } from './commercial-returns.js';
 import { registerFinancialRecovery } from './financial-recovery.js';
@@ -244,10 +246,10 @@ export function buildApp(
   }
   function commerceScope(a: Account, merchantId: string) {
     assert(
-      a.role === 'operator' || (a.role === 'merchant' && a.merchantId === merchantId),
+      a.role === 'merchant' && a.merchantId === merchantId,
       403,
       'FORBIDDEN',
-      'ليس لديك صلاحية لهذا المتجر',
+      'طلب النقل يُنشئه حساب المتجر المالك فقط',
     );
   }
 
@@ -268,15 +270,53 @@ export function buildApp(
   registerInventory(app, db, write, account);
   registerTransfers(app, db, write, account, clock);
   registerRecovery(app, db, write, operator);
-  registerNetwork(app, db, write, operator);
+  registerNetwork(app, db, write, operator, (kind, id, merchantId) => {
+    for (const [token, session] of sessions) {
+      const a = session.account;
+      if (
+        (kind === 'couriers' && a.courierId === id) ||
+        (kind === 'sites' && a.pickupSiteId === id)
+      )
+        sessions.delete(token);
+    }
+  });
+  registerShipmentSearch(app, db, account);
+  registerExecutionEarnings(app, db, account);
   async function availableAccounts(): Promise<Account[]> {
+    const activeCouriers = new Set(
+      (
+        await db.query<{ id: string }>('SELECT id FROM couriers WHERE archived_at IS NULL')
+      ).rows.map((r) => r.id),
+    );
+    const activeSites = new Set(
+      (await db.query<{ id: string }>('SELECT id FROM sites WHERE archived_at IS NULL')).rows.map(
+        (r) => r.id,
+      ),
+    );
+
     const points = (
       await db.query<{ id: string; name: string }>(
-        "SELECT id,name FROM sites WHERE kind='pickup' AND id<>'pickup-a' ORDER BY name",
+        "SELECT id,name FROM sites WHERE kind='pickup' AND archived_at IS NULL AND id<>'pickup-a' ORDER BY name",
       )
     ).rows;
     return [
-      ...demoAccounts,
+      ...demoAccounts.filter(
+        (a) =>
+          (!a.courierId || activeCouriers.has(a.courierId)) &&
+          (!a.pickupSiteId || activeSites.has(a.pickupSiteId)),
+      ),
+      ...(
+        await db.query<{ id: string; name: string }>(
+          "SELECT id,name FROM couriers WHERE archived_at IS NULL AND id NOT IN ('courier-a','courier-b','courier-c') ORDER BY name",
+        )
+      ).rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        role: 'courier' as const,
+        courierId: c.id,
+        merchantId: null,
+        pickupSiteId: null,
+      })),
       ...points.map((p) => ({
         id: p.id,
         name: 'موظف ' + p.name,
@@ -355,13 +395,21 @@ export function buildApp(
       available: boolean;
       rating: number | null;
       ratingCount: number;
+      version: number;
+      company_id: string | null;
+      company_name: string | null;
+      rate_bps: number | null;
     }>(
-      'SELECT c.*,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM couriers c LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind=\'courier\' GROUP BY subject_id) r ON r.subject_id=c.id ORDER BY c.id',
+      'SELECT c.*,d.name company_name,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM couriers c LEFT JOIN delivery_companies d ON d.id=c.company_id LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind=\'courier\' GROUP BY subject_id) r ON r.subject_id=c.id WHERE c.archived_at IS NULL ORDER BY c.id',
     );
     const couriers: Courier[] = [];
     if (a.role === 'operator')
       for (const c of cs.rows)
         couriers.push({
+          version: c.version,
+          companyId: c.company_id,
+          companyName: c.company_name,
+          rateBps: c.rate_bps,
           rating: c.rating,
           ratingCount: c.ratingCount,
           id: c.id,
@@ -394,7 +442,7 @@ export function buildApp(
       rating: number | null;
       ratingCount: number;
     }>(
-      `SELECT s.*,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM (${siteSql}) s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id`,
+      `SELECT s.*,r.rating,COALESCE(r.count,0)::integer AS "ratingCount" FROM (${siteSql}) s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id WHERE s.archived_at IS NULL`,
       a.role === 'merchant'
         ? [a.merchantId]
         : a.role === 'courier'
@@ -427,27 +475,23 @@ export function buildApp(
     }));
     return {
       account: a,
+      deliveryCompanies:
+        a.role === 'operator'
+          ? (
+              await db.query(
+                'SELECT id,name,address,latitude,longitude,version,rate_bps AS "rateBps" FROM delivery_companies ORDER BY name',
+              )
+            ).rows
+          : [],
       shipments,
       couriers,
       sites,
-      stats: {
-        total: shipments.length,
-        active: shipments.filter((s) =>
-          [
-            'ready',
-            'assigned',
-            'picked_up',
-            'in_transit',
-            'awaiting_handover',
-            'ready_for_pickup',
-            'returning',
-          ].includes(s.status),
-        ).length,
-        delivered: shipments.filter((s) => s.status === 'delivered').length,
-        exceptions: shipments.filter(
-          (s) => ['failed', 'pickup_expired'].includes(s.status) || s.pickupOverdue,
-        ).length,
-      },
+      stats: (
+        await db.query<{ total: number; active: number; delivered: number; exceptions: number }>(
+          `SELECT COUNT(*)::integer total,COUNT(*) FILTER(WHERE status IN ('ready','assigned','picked_up','in_transit','awaiting_handover','ready_for_pickup','returning'))::integer active,COUNT(*) FILTER(WHERE status='delivered')::integer delivered,COUNT(*) FILTER(WHERE status IN ('failed','pickup_expired') OR pickup_overdue)::integer exceptions FROM shipments${where}`,
+          params,
+        )
+      ).rows[0],
     };
   });
   app.get('/api/shipments/pickup-alerts', async (req) => {

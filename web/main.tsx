@@ -10,6 +10,7 @@ import './styles.css';
 import './operations-theme.css';
 import './workflow-ux.css';
 import './customer-locations.css';
+import './interface-refinement.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>{location.pathname === '/shop' ? <Storefront /> : <App />}</React.StrictMode>,

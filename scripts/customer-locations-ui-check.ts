@@ -62,6 +62,16 @@ try {
     await page.getByRole('button', { name: 'أضف حقيبة يومية إلى السلة' }).click();
     await page.getByRole('button', { name: 'السلة، 1 منتجات' }).click();
     await page.getByRole('button', { name: 'المتابعة إلى التوصيل' }).click();
+    await page.getByRole('button', { name: 'حساب التوصيل ومراجعة الطلب', exact: true }).click();
+    await page.locator('#recipient-name[aria-invalid="true"]').waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'recipient-name');
+    assert.equal(
+      await page.locator('#recipient-error').evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= innerHeight;
+      }),
+      true,
+    );
     await page.getByLabel('اسم المستلم').fill('عميل اختبار الموقع');
     if (width === 1440) {
       await page.getByRole('button', { name: /^موقعك الحالي/ }).click();
@@ -120,6 +130,9 @@ try {
     });
     await page.getByRole('button', { name: 'طلباتي', exact: true }).click();
     const order = page.locator('.shop-order').filter({ hasText: f.shipment().reference });
+    await order.getByRole('heading', { name: 'كيف كانت تجربة الاستلام؟' }).waitFor();
+    await page.reload();
+    assert.equal(new URL(page.url()).searchParams.get('view'), 'orders');
     await order.getByRole('heading', { name: 'كيف كانت تجربة الاستلام؟' }).waitFor();
     if (width === 1440) {
       await order

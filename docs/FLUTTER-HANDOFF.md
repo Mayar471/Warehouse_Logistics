@@ -71,3 +71,14 @@ Use GET /api/notifications and POST /api/notifications/read with ids, or the cus
 ## Saved locations and verified service ratings — 13 October 2026
 
 Read docs/CUSTOMER-LOCATIONS-AND-RATINGS.md. Address CRUD is customer-session scoped, versioned, and uses idempotent saves. Request GPS only on explicit current-location selection. Nearest pickup ranking accepts owned addressId or coordinates and returns up to five located enabled points, with straight-line distance and verified rating aggregates. Checkout location is copied into the order and excluded from public tracking. Delivered own orders may submit one courier and one applicable pickup rating. Use shipment.deliveryCourier for the confirmed executor after pickup custody clears the active courierId; do not infer a missing historical executor.
+
+## Completion changes — 14 October 2026
+
+- `GET /api/shipments?search=&filter=all&page=0` performs scoped server search over all shipments; `rows`, `total`, `page`, `pageSize=25`. Filters include `active`, `attention`, and shipment statuses. Search includes external reference, recipient, merchant and destination. A record absent from bootstrap's 100-row sample may still be searchable.
+- Bootstrap statistics now cover the full account scope. Bootstrap shipment rows remain a bounded sample; do not derive historical totals from its array length.
+- Couriers and delivery companies expose nullable `rateBps` (basis points: 6000 means 60%). Operators can set it in partner POST/PATCH requests. Missing/null means no agreement; zero is an explicit zero rate.
+- The current outbound assignment captures the agreement. New rate settings apply to new assignments, not deliveries already assigned. An independent courier uses their own rate; an affiliated courier uses the company's rate.
+- `GET /api/execution-earnings` is available to operations and couriers. Operations see all beneficiaries; couriers see only their own independent earnings. It returns bounded `rows`, complete beneficiary `groups`, and `settlementImplemented:false`.
+- Earnings apply once to the delivery fee, excluding goods value, on home delivery or custody receipt by the pickup point. Customer pickup does not earn a second courier fee. No agreed rate produces a null amount; older executions without an assignment agreement are not automatically reconstructed.
+- This is accrual reporting, not disbursement. Company login and salary payout/recipient confirmation remain unfinished. Do not display these records as paid or subtract them from customer collection totals.
+- Local demo database migration: 26. Authentication and external hosting limitations described above still apply.

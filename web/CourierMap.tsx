@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LocationView } from '../shared/location.js';
 import 'leaflet/dist/leaflet.css';
-const tileUrl =
-  import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const attribution =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' +
-  (import.meta.env.VITE_MAP_ATTRIBUTION ? ' | ' + import.meta.env.VITE_MAP_ATTRIBUTION : '');
+import { tileUrl, tileOptions } from './map-config.js';
 export default function CourierMap({ point }: { point: NonNullable<LocationView['point']> }) {
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<{
@@ -25,13 +21,7 @@ export default function CourierMap({ point }: { point: NonNullable<LocationView[
         const p = latest.current;
         const center: [number, number] = [p.latitude, p.longitude];
         const map = L.map(host.current, { scrollWheelZoom: false }).setView(center, 15);
-        L.tileLayer(tileUrl, {
-          attribution,
-          maxZoom: 19,
-          minZoom: 3,
-          keepBuffer: 0,
-          referrerPolicy: 'origin',
-        })
+        L.tileLayer(tileUrl, tileOptions)
           .on('tileerror', () => setFailed(true))
           .addTo(map);
         const circle = L.circle(center, {

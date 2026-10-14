@@ -4,6 +4,8 @@ import type { Shipment } from '../shared/contracts.js';
 import { statusLabels } from '../shared/contracts.js';
 import type { CommercialReturn, CommercialReturnView } from '../shared/commercial-returns.js';
 import { api } from './api.js';
+import { shipmentGuidance } from './shipment-guidance.js';
+import { matchesShipmentFilter } from '../shared/shipment-filters.js';
 const returnStatus = {
   assigned: 'بانتظار قبول الإرجاع',
   accepted: 'بانتظار تسليم العميل',
@@ -15,16 +17,24 @@ export function CourierTasks({
   onShipment,
   onReturn,
   revision,
+  shipmentFilter = 'all',
 }: {
   shipments: Shipment[];
   onShipment: (id: string) => void;
   onReturn: (id: string) => void;
   revision: number;
+  shipmentFilter?: string;
 }) {
   const [returns, setReturns] = useState<CommercialReturn[]>([]),
     [total, setTotal] = useState(0),
     [search, setSearch] = useState(''),
-    [filter, setFilter] = useState('all'),
+    [filter, setFilter] = useState(
+      shipmentFilter === 'all'
+        ? 'all'
+        : shipmentFilter === 'shipments'
+          ? 'shipment'
+          : `shipment:${shipmentFilter}`,
+    ),
     [stale, setStale] = useState(false),
     [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -72,7 +82,7 @@ export function CourierTasks({
       updatedAt: s.updatedAt,
       fee: s.feeMinor,
       overdue: s.pickupOverdue,
-      next: 'افتح تفاصيل التوصيل للإجراء التالي',
+      next: shipmentGuidance(s).next,
     })),
     ...returns.map((r) => ({
       id: r.id,
@@ -97,13 +107,23 @@ export function CourierTasks({
     })),
   ].sort(
     (a, b) =>
-      Number(b.kind === 'return' && b.status === 'assigned') -
-        Number(a.kind === 'return' && a.status === 'assigned') ||
+      Number(b.overdue) - Number(a.overdue) ||
+      Number(b.status === 'assigned') - Number(a.status === 'assigned') ||
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
   const visible = rows.filter(
     (r) =>
-      (filter === 'all' || filter === r.kind || filter === `${r.kind}:${r.status}`) &&
+      ((filter === 'all' &&
+        !(r.kind === 'shipment' && ['delivered', 'returned', 'cancelled'].includes(r.status))) ||
+        filter === 'history' ||
+        filter === r.kind ||
+        filter === `${r.kind}:${r.status}` ||
+        (r.kind === 'shipment' &&
+          filter.startsWith('shipment:') &&
+          matchesShipmentFilter(
+            shipments.find((s) => s.id === r.id)!,
+            filter.slice(9),
+          ))) &&
       `${r.reference} ${r.merchant} ${r.recipient} ${r.place}`.includes(search),
   );
   const open = (r: (typeof rows)[number]) =>
@@ -113,7 +133,7 @@ export function CourierTasks({
       <div className="panel-title">
         <div>
           <h2>مهامك الحالية</h2>
-          <p>التوصيل واستلام المرتجعات في قائمة واحدة؛ افتح المهمة لمراجعة الإجراء التالي.</p>
+          <p>المهام المتأخرة والتي تنتظر القبول أولًا، ثم بقية مهام التوصيل والإرجاع.</p>
         </div>
         <span className="subtle-chip">{shipments.length + total} مهمة</span>
       </div>
@@ -134,8 +154,11 @@ export function CourierTasks({
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
-            <option value="all">كل المهام</option>
+            <option value="all">كل المهام النشطة</option>
+            <option value="history">المهام وسجل المكتمل</option>
             <option value="shipment">مهام التوصيل</option>
+            <option value="shipment:active">توصيلات قيد التنفيذ</option>
+            <option value="shipment:attention">توصيلات تحتاج متابعة</option>
             <option value="return">استلام المرتجعات</option>
             <optgroup label="حالات التوصيل">
               {Object.entries(statusLabels).map(([status, label]) => (
@@ -238,14 +261,14 @@ export function CourierTasks({
                   <td className="muted">{new Date(r.updatedAt).toLocaleString('ar-SY')}</td>
                   <td>
                     <button
-                      className="icon-button"
+                      className="button secondary task-open"
                       aria-label={`فتح ${r.kind === 'return' ? 'إرجاع' : 'توصيل'} ${r.reference}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         open(r);
                       }}
                     >
-                      <ChevronLeft size={17} />
+                      متابعة المهمة <ChevronLeft size={17} />
                     </button>
                   </td>
                 </tr>

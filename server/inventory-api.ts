@@ -41,7 +41,7 @@ export function registerInventory(
     if (!siteId) return null;
     const site = (
       await db.query<{ merchant_id: string }>(
-        "SELECT merchant_id FROM sites WHERE id=$1 AND kind IN ('store','warehouse')",
+        "SELECT merchant_id FROM sites WHERE id=$1 AND archived_at IS NULL AND kind IN ('store','warehouse')",
         [siteId],
       )
     ).rows[0];
@@ -61,7 +61,7 @@ export function registerInventory(
       await db.query(
         `SELECT s.id,s.name,s.address,s.city,s.kind,s.version,s.merchant_id AS "merchantId",m.name AS "merchantName",COALESCE(jsonb_agg(i.product_id ORDER BY i.product_id) FILTER(WHERE i.product_id IS NOT NULL),'[]'::jsonb) AS products
       FROM sites s JOIN merchants m ON m.id=s.merchant_id LEFT JOIN inventory_stock i ON i.site_id=s.id AND i.merchant_id=s.merchant_id
-      WHERE s.kind IN ('store','warehouse') AND ($1::text IS NULL OR s.merchant_id=$1) GROUP BY s.id,m.name ORDER BY m.name,s.name`,
+      WHERE s.archived_at IS NULL AND s.kind IN ('store','warehouse') AND ($1::text IS NULL OR s.merchant_id=$1) GROUP BY s.id,m.name ORDER BY m.name,s.name`,
         [merchantId],
       )
     ).rows;
@@ -102,7 +102,7 @@ export function registerInventory(
         );
         const count = (
           await tx.query<{ count: number }>(
-            "SELECT COUNT(*)::integer count FROM sites WHERE merchant_id=$1 AND kind IN ('store','warehouse')",
+            "SELECT COUNT(*)::integer count FROM sites WHERE merchant_id=$1 AND archived_at IS NULL AND kind IN ('store','warehouse')",
             [body.merchantId],
           )
         ).rows[0].count;
@@ -110,7 +110,7 @@ export function registerInventory(
         assert(
           !(
             await tx.query(
-              "SELECT id FROM sites WHERE merchant_id=$1 AND name=$2 AND kind IN ('store','warehouse')",
+              "SELECT id FROM sites WHERE merchant_id=$1 AND name=$2 AND archived_at IS NULL AND kind IN ('store','warehouse')",
               [body.merchantId, body.name],
             )
           ).rows.length,
@@ -168,7 +168,7 @@ export function registerInventory(
       idempotent(tx, `${a.id}:inventory:products:${id}`, key(req), body, async () => {
         const site = (
           await tx.query<{ merchant_id: string; version: number }>(
-            "SELECT merchant_id,version FROM sites WHERE id=$1 AND kind IN ('store','warehouse')",
+            "SELECT merchant_id,version FROM sites WHERE id=$1 AND archived_at IS NULL AND kind IN ('store','warehouse')",
             [id],
           )
         ).rows[0];

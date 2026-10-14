@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Coordinates } from '../shared/customer-locations.js';
+import { tileUrl, tileOptions } from './map-config.js';
 export default function AddressMap({
   point,
   onChange,
@@ -20,11 +21,7 @@ export default function AddressMap({
       point ? [point.latitude, point.longitude] : [33.5138, 36.2765],
       14,
     );
-    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution:
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+    const tiles = L.tileLayer(tileUrl, tileOptions).addTo(map);
     tiles.on('tileerror', () => setFailed(true));
     layer.current = { map, marker: null };
     map.on('click', (e) =>
@@ -43,7 +40,12 @@ export default function AddressMap({
   }, []);
   useEffect(() => {
     const l = layer.current;
-    if (!l || !point) return;
+    if (!l) return;
+    if (!point) {
+      l.marker?.remove();
+      l.marker = null;
+      return;
+    }
     const position: L.LatLngExpression = [point.latitude, point.longitude];
     if (l.marker) l.marker.setLatLng(position);
     else
@@ -74,6 +76,18 @@ export default function AddressMap({
         <p role="status">
           تعذر تحميل بعض أجزاء الخريطة. يمكنك استخدام موقعك الحالي، أو إعادة المحاولة عند توفر
           الاتصال.
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => {
+              setFailed(false);
+              layer.current?.map.eachLayer((l) => {
+                if (l instanceof L.TileLayer) l.redraw();
+              });
+            }}
+          >
+            إعادة تحميل الخريطة
+          </button>
         </p>
       )}
     </div>

@@ -50,14 +50,16 @@ export async function mapShipment(tx: Transaction, row: ShipmentRow): Promise<Sh
     courier: string | null;
     location: import('../shared/customer-locations.js').Coordinates | null;
     deliveredBy: { id: string; name: string } | null;
+    payee: { companyId: string | null; name: string } | null;
   }>(
-    `SELECT m.name merchant,s.name origin,c.name courier,(SELECT jsonb_build_object('id',c2.id,'name',c2.name) FROM delivery_service_subjects d JOIN couriers c2 ON c2.id=d.courier_id WHERE d.shipment_id=$4) AS "deliveredBy",(SELECT delivery_location FROM storefront_checkouts WHERE shipment_id=$4 LIMIT 1) location FROM merchants m JOIN sites s ON s.id=$2
+    `SELECT m.name merchant,s.name origin,c.name courier,(SELECT CASE WHEN settlement_name IS NULL THEN NULL ELSE jsonb_build_object('companyId',settlement_company_id,'name',settlement_name) END FROM delivery_service_subjects WHERE shipment_id=$4) payee,(SELECT jsonb_build_object('id',c2.id,'name',c2.name) FROM delivery_service_subjects d JOIN couriers c2 ON c2.id=d.courier_id WHERE d.shipment_id=$4) AS "deliveredBy",(SELECT delivery_location FROM storefront_checkouts WHERE shipment_id=$4 LIMIT 1) location FROM merchants m JOIN sites s ON s.id=$2
      LEFT JOIN couriers c ON c.id=$3 WHERE m.id=$1`,
     [row.merchant_id, row.origin_id, row.courier_id, row.id],
   );
   const n = names.rows[0];
   return {
     deliveryLocation: n.location,
+    deliveryPayee: n.payee,
     deliveryCourier: n.deliveredBy,
     originHandoverRequired: row.origin_handover_required,
     collection: await collection(tx, row.id),
@@ -182,7 +184,7 @@ export async function createQuote(
   input: ShipmentInput,
 ) {
   const sites = await tx.query<{ merchant_id: string; city: string }>(
-    'SELECT merchant_id,city FROM sites WHERE id=$1',
+    'SELECT merchant_id,city FROM sites WHERE id=$1 AND archived_at IS NULL',
     [input.originId],
   );
   assert(
@@ -278,6 +280,16 @@ export async function createShipment(
       409,
       'QUOTE_EXPIRED',
       'انتهت صلاحية عرض الخدمة أو استُخدم مسبقًا',
+    );
+    assert(
+      (
+        await tx.query('SELECT id FROM sites WHERE id=$1 AND archived_at IS NULL', [
+          q.input.originId,
+        ])
+      ).rows.length,
+      409,
+      'ORIGIN_ARCHIVED',
+      'موقع المنشأ أُزيل من الشبكة؛ اطلب عرضًا جديدًا',
     );
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -753,6 +765,16 @@ export async function applyAction(
   }
   if (['deliver', 'release_pickup'].includes(action))
     await collectCash(tx, row, account, cash, now);
+  if (action === 'assign')
+    await tx.query(
+      `INSERT INTO execution_terms(shipment_id,courier_id,company_id,beneficiary_name,rate_bps,assignment_version) SELECT $1,c.id,c.company_id,COALESCE(d.name,c.name),CASE WHEN c.company_id IS NULL THEN c.rate_bps ELSE d.rate_bps END,$3 FROM couriers c LEFT JOIN delivery_companies d ON d.id=c.company_id WHERE c.id=$2 ON CONFLICT(shipment_id) DO UPDATE SET courier_id=EXCLUDED.courier_id,company_id=EXCLUDED.company_id,beneficiary_name=EXCLUDED.beneficiary_name,rate_bps=EXCLUDED.rate_bps,assignment_version=EXCLUDED.assignment_version`,
+      [row.id, selected, row.version + 1],
+    );
+  if (['deliver', 'receive_pickup'].includes(action) && row.courier_id)
+    await tx.query(
+      `INSERT INTO execution_earnings(shipment_id,courier_id,company_id,beneficiary_name,rate_bps,fee_minor,amount_minor,currency,earned_at) SELECT t.shipment_id,t.courier_id,t.company_id,t.beneficiary_name,t.rate_bps,$3::integer,CASE WHEN t.rate_bps IS NULL THEN NULL ELSE ROUND($3::integer::numeric*t.rate_bps/10000)::bigint END,'SYP',$4::timestamptz FROM execution_terms t WHERE t.shipment_id=$1 AND t.courier_id=$2 ON CONFLICT DO NOTHING`,
+      [row.id, row.courier_id, row.fee_minor, new Date(now).toISOString()],
+    );
   const hasInventory = await inventoryTransition(tx, row, action, account.name, now);
   if (hasInventory && action === 'prepare')
     description = 'أكد المتجر تجهيز كميات الطلب المحجوزة وإغلاق الطرد؛ توقف انتهاء الحجز';
@@ -760,7 +782,7 @@ export async function applyAction(
     description = 'استُلم المرتجع في المنشأ وأضيف إلى المخزون المعزول؛ غير متاح للبيع قبل الفحص';
   if (['receive_pickup', 'deliver'].includes(action) && row.courier_id)
     await tx.query(
-      'INSERT INTO delivery_service_subjects(shipment_id,courier_id,pickup_site_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+      'INSERT INTO delivery_service_subjects(shipment_id,courier_id,pickup_site_id,settlement_company_id,settlement_name) SELECT $1,c.id,$3,c.company_id,COALESCE(d.name,c.name) FROM couriers c LEFT JOIN delivery_companies d ON d.id=c.company_id WHERE c.id=$2 ON CONFLICT DO NOTHING',
       [row.id, row.courier_id, row.pickup_site_id],
     );
   await tx.query(

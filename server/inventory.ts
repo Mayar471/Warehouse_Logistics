@@ -14,7 +14,7 @@ type Line = {
 export async function availability(tx: Transaction) {
   return (
     await tx.query<{ productId: string; available: number }>(
-      `SELECT i.product_id AS "productId",MAX(i.on_hand-i.reserved-i.quarantine)::integer AS available FROM inventory_stock i JOIN sites s ON s.id=i.site_id AND s.merchant_id=i.merchant_id WHERE i.merchant_id=$1 AND s.city='دمشق' AND s.kind IN ('store','warehouse') GROUP BY i.product_id ORDER BY i.product_id`,
+      `SELECT i.product_id AS "productId",MAX(i.on_hand-i.reserved-i.quarantine)::integer AS available FROM inventory_stock i JOIN sites s ON s.id=i.site_id AND s.merchant_id=i.merchant_id WHERE i.merchant_id=$1 AND s.archived_at IS NULL AND s.city='دمشق' AND s.kind IN ('store','warehouse') GROUP BY i.product_id ORDER BY i.product_id`,
       ['merchant-a'],
     )
   ).rows;
@@ -23,7 +23,7 @@ export async function availability(tx: Transaction) {
 export async function selectStoreOrigin(tx: Transaction, items: CartItem[]) {
   const candidates = (
     await tx.query<{ id: string; name: string }>(
-      `SELECT s.id,s.name FROM sites s WHERE s.merchant_id='merchant-a' AND s.city='دمشق' AND s.kind IN ('store','warehouse') AND NOT EXISTS (
+      `SELECT s.id,s.name FROM sites s WHERE s.merchant_id='merchant-a' AND s.archived_at IS NULL AND s.city='دمشق' AND s.kind IN ('store','warehouse') AND NOT EXISTS (
       SELECT 1 FROM jsonb_to_recordset($1::jsonb) AS b("productId" text,quantity integer)
       WHERE NOT EXISTS (SELECT 1 FROM inventory_stock i WHERE i.merchant_id=s.merchant_id AND i.site_id=s.id AND i.product_id=b."productId" AND i.on_hand-i.reserved-i.quarantine>=b.quantity)
     ) ORDER BY CASE WHEN s.id='site-a' THEN 0 ELSE 1 END,s.id`,

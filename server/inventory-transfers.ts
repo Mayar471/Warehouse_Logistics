@@ -350,7 +350,7 @@ export function registerTransfers(
         );
         const sites = (
           await tx.query<{ city: string }>(
-            "SELECT city FROM sites WHERE id=ANY($1::text[]) AND merchant_id=$2 AND kind IN ('store','warehouse')",
+            "SELECT city FROM sites WHERE id=ANY($1::text[]) AND merchant_id=$2 AND archived_at IS NULL AND kind IN ('store','warehouse')",
             [[body.sourceId, body.destinationId], body.merchantId],
           )
         ).rows;

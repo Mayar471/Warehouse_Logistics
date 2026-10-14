@@ -115,6 +115,29 @@ test('merchant isolation includes lists and direct object access', async () => {
     404,
   );
 });
+test('operations cannot request merchant transport through the commerce BFF', async () => {
+  for (const url of ['/api/demo-commerce/quotes', '/api/demo-commerce/orders']) {
+    const response = await system.app.inject({
+      method: 'POST',
+      url,
+      headers: cookie('ops'),
+      payload: url.endsWith('/quotes')
+        ? {
+            merchantId: 'merchant-a',
+            input: {
+              externalReference: 'TEST-OP',
+              originId: 'site-a',
+              recipientName: 'عميل',
+              destination: 'الروضة، دمشق',
+              weightKg: 1,
+            },
+          }
+        : { merchantId: 'merchant-a', quoteId: '00000000-0000-4000-8000-000000000000' },
+    });
+    assert.equal(response.statusCode, 403);
+  }
+});
+
 test('commerce BFF cannot create quotes for another merchant', async () => {
   const r = await system.app.inject({
     method: 'POST',

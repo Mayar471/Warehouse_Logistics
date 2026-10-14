@@ -40,6 +40,10 @@ export interface Account {
   courierId: string | null;
 }
 export interface Courier {
+  rateBps?: number | null;
+  version?: number;
+  companyId?: string | null;
+  companyName?: string | null;
   rating?: number | null;
   ratingCount?: number;
   id: string;
@@ -66,6 +70,7 @@ export interface Site {
   merchantId: string | null;
 }
 export interface Shipment {
+  deliveryPayee?: { companyId: string | null; name: string } | null;
   deliveryCourier?: { id: string; name: string } | null;
   deliveryLocation?: import('./customer-locations.js').Coordinates | null;
   collection: import('./cash.js').Collection | null;
@@ -128,11 +133,21 @@ export interface ShipmentInput {
   weightKg: number;
 }
 export interface Bootstrap {
+  deliveryCompanies?: DeliveryCompany[];
   account: Account;
   shipments: Shipment[];
   couriers: Courier[];
   sites: Site[];
   stats: { total: number; active: number; delivered: number; exceptions: number };
+}
+export interface DeliveryCompany {
+  rateBps?: number | null;
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  version: number;
 }
 export interface OutboxEvent {
   retryCount: number;

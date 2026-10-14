@@ -4,6 +4,12 @@ import { CommercialReturns } from './CommercialReturns.js';
 import { Notifications, focusNotificationTarget } from './Notifications.js';
 import { QuickChoices, ReferenceInput, FullAmount } from './QuickInput.js';
 import { CourierTasks } from './CourierTasks.js';
+import { DeliveryPartners } from './DeliveryPartners.js';
+import { PartnerLocation } from './PartnerLocation.js';
+import { RemovePartner } from './RemovePartner.js';
+import { ExecutionEarnings } from './ExecutionEarnings.js';
+import { matchesShipmentFilter, activeShipmentStatuses } from '../shared/shipment-filters.js';
+import { shipmentGuidance } from './shipment-guidance.js';
 import { Inventory } from './Inventory.js';
 import { InventoryTransfers } from './InventoryTransfers.js';
 import { FinancialNotice } from './FinancialRecovery.js';
@@ -79,6 +85,7 @@ const navItems = [
   { id: 'returns', label: 'مرتجعات العملاء', icon: Package },
   { id: 'cash', label: 'التحصيل وعهدة النقد', icon: ShieldCheck },
   { id: 'payouts', label: 'مستحقات المتاجر', icon: ShieldCheck },
+  { id: 'earnings', label: 'أجور التوصيل', icon: ShieldCheck },
   { id: 'integration', label: 'مختبر التكامل', icon: Activity },
 ];
 const labels: Record<string, string> = {
@@ -90,6 +97,7 @@ const labels: Record<string, string> = {
   returns: 'مرتجعات العملاء',
   cash: 'التحصيل وعهدة النقد',
   payouts: 'مستحقات المتاجر',
+  earnings: 'أجور التوصيل',
   integration: 'مختبر التكامل',
 };
 const eventLabels: Record<string, string> = {
@@ -130,80 +138,6 @@ function Status({ status }: { status: ShipmentStatus }) {
     </span>
   );
 }
-function RouteMap({ shipments }: { shipments: Shipment[] }) {
-  const active = shipments.filter((s) =>
-    ['assigned', 'picked_up', 'in_transit', 'returning'].includes(s.status),
-  );
-  return (
-    <div className="route-map">
-      <svg viewBox="0 0 740 270" role="img" aria-label="مخطط توضيحي لمراحل النقل في دمشق">
-        <defs>
-          <pattern
-            id="blocks"
-            width="94"
-            height="70"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(-17)"
-          >
-            <rect x="6" y="6" width="80" height="55" rx="7" fill="#e8edeb" />
-            <path d="M0 0H94M0 0V70" stroke="#fff" strokeWidth="9" />
-          </pattern>
-          <linearGradient id="river">
-            <stop stopColor="#9ed5d8" />
-            <stop offset="1" stopColor="#d6eaea" />
-          </linearGradient>
-        </defs>
-        <rect width="740" height="270" fill="#f2f5f2" />
-        <rect width="740" height="270" fill="url(#blocks)" />
-        <path
-          d="M-20 224C170 176 160 139 326 132S540 50 760 38"
-          stroke="url(#river)"
-          strokeWidth="13"
-          fill="none"
-        />
-        <path
-          d="M-30 92L190 110L277 170L540 181L770 226M133 -10L175 66L180 200L195 280M422 -10L388 55L457 157L467 285M-10 247L225 204L491 78L765 82"
-          stroke="white"
-          strokeWidth="13"
-          fill="none"
-        />
-        <rect x="274" y="28" width="92" height="47" rx="20" fill="#d6e6d9" />
-        <rect x="520" y="203" width="85" height="54" rx="18" fill="#d6e6d9" />
-        <text x="350" y="104" fill="#8e9e96" fontSize="15">
-          الروضة
-        </text>
-        <text x="99" y="180" fill="#8e9e96" fontSize="15">
-          المزة
-        </text>
-        <text x="590" y="131" fill="#8e9e96" fontSize="15">
-          الصالحية
-        </text>
-        <path
-          d="M185 176L278 169L390 116L481 95L566 95"
-          fill="none"
-          stroke="#168d80"
-          strokeWidth="4"
-          strokeDasharray="7 7"
-        />
-        <circle cx="185" cy="176" r="11" fill="#fff" stroke="#168d80" strokeWidth="4" />
-        <circle cx="566" cy="95" r="11" fill="#fff" stroke="#168d80" strokeWidth="4" />
-        <g transform="translate(376 122)">
-          <circle r="23" fill="#0f6964" opacity=".13" />
-          <circle r="14" fill="#0d7169" stroke="#fff" strokeWidth="4" />
-          <path d="M-5 -1H5M1 -5L5 -1L1 3" stroke="white" strokeWidth="2" fill="none" />
-        </g>
-      </svg>
-      <div className="map-caption">
-        <span>
-          <span className="live-dot" />
-          {fmt.format(active.length)} شحنات نشطة على الشبكة
-        </span>
-        <span>مخطط تجريبي · ليس تتبعًا مباشرًا</span>
-      </div>
-    </div>
-  );
-}
-
 export function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [data, setData] = useState<Bootstrap | null>(null);
@@ -217,6 +151,16 @@ export function App() {
   const [returnRevision, setReturnRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [shipmentPage, setShipmentPage] = useState(0);
+  const [shipmentList, setShipmentList] = useState<{
+    rows: Shipment[];
+    total: number;
+    page: number;
+    pageSize: number;
+  } | null>(null);
+  const listCriteria = useRef('');
+  const [listLoading, setListLoading] = useState(false),
+    [listError, setListError] = useState('');
   const [menu, setMenu] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
   const [tracking, setTracking] = useState<null | {
@@ -227,12 +171,71 @@ export function App() {
     timeline: { type: string; createdAt: string }[];
   }>(null);
   const [publicMode, setPublicMode] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState('');
+  const [dataStale, setDataStale] = useState(false);
+  const refreshSequence = useRef(0),
+    switching = useRef(false),
+    foreground = useRef(0);
   const refresh = useCallback(async () => {
-    const fresh = await api<Bootstrap>('/api/bootstrap');
-    setData(fresh);
-    setReturnRevision((x) => x + 1);
-    setError('');
+    foreground.current++;
+    try {
+      const sequence = ++refreshSequence.current;
+      const fresh = await api<Bootstrap>('/api/bootstrap');
+      const nextAccounts = (await api<{ accounts: Account[] }>('/api/demo/accounts')).accounts;
+      if (sequence !== refreshSequence.current) return;
+      setAccounts(nextAccounts);
+      setData(fresh);
+      setLastUpdated(new Date().toISOString());
+      setDataStale(false);
+      setReturnRevision((x) => x + 1);
+      setError('');
+    } finally {
+      foreground.current--;
+    }
   }, []);
+  useEffect(() => {
+    if (!data || publicMode) return;
+    let disposed = false,
+      inFlight = false;
+    const update = async () => {
+      if (
+        disposed ||
+        inFlight ||
+        foreground.current > 0 ||
+        switching.current ||
+        document.visibilityState !== 'visible'
+      )
+        return;
+      inFlight = true;
+      const sequence = ++refreshSequence.current;
+      try {
+        const fresh = await api<Bootstrap>('/api/bootstrap');
+        if (
+          !disposed &&
+          sequence === refreshSequence.current &&
+          fresh.account.id === data.account.id
+        ) {
+          setData(fresh);
+          setLastUpdated(new Date().toISOString());
+          setDataStale(false);
+        }
+      } catch {
+        if (!disposed && sequence === refreshSequence.current) setDataStale(true);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void update(), 10000);
+    const wake = () => void update();
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, [data?.account.id, publicMode]);
   const report = useCallback(
     (e: unknown) => setError(e instanceof Error ? e.message : 'تعذر إتمام العملية'),
     [],
@@ -288,7 +291,10 @@ export function App() {
     };
   }, []);
   async function switchAccount(id: string) {
+    switching.current = true;
+    refreshSequence.current++;
     setLoading(true);
+    setCreating(false);
     try {
       await api('/api/demo/session', { method: 'POST', body: JSON.stringify({ accountId: id }) });
       setSelected(null);
@@ -300,15 +306,61 @@ export function App() {
     } catch (e) {
       report(e);
     } finally {
+      switching.current = false;
       setLoading(false);
     }
   }
+  useEffect(() => {
+    setShipmentPage(0);
+  }, [search, filter, data?.account.id]);
+  useEffect(() => {
+    if (!data || data.account.role === 'courier' || !['overview', 'shipments'].includes(nav))
+      return;
+    let disposed = false;
+    const criteria = JSON.stringify([data.account.id, nav, search, filter, shipmentPage]);
+    if (listCriteria.current !== criteria) {
+      setListLoading(true);
+      setShipmentList(null);
+    }
+    listCriteria.current = criteria;
+    setListError('');
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await api<NonNullable<typeof shipmentList>>(
+          '/api/shipments?' + new URLSearchParams({ search, filter, page: String(shipmentPage) }),
+        );
+        if (!disposed) setShipmentList(result);
+      } catch (e) {
+        if (!disposed) setListError(e instanceof Error ? e.message : 'تعذر البحث في الشحنات');
+      } finally {
+        if (!disposed) setListLoading(false);
+      }
+    }, 200);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [data?.account.id, nav, search, filter, shipmentPage, lastUpdated]);
   const shipments = data?.shipments ?? [];
-  const visible = shipments.filter(
+  const localVisible = shipments.filter(
     (s) =>
-      (filter === 'all' || s.status === filter) &&
+      matchesShipmentFilter(s, filter) &&
       `${s.reference} ${s.recipientName} ${s.merchantName} ${s.destination}`.includes(search),
   );
+  const visible = data?.account.role === 'courier' ? localVisible : (shipmentList?.rows ?? []);
+  function openShipmentFilter(next: string) {
+    setShipmentPage(0);
+    setSearch('');
+    setFilter(next);
+    setNav('shipments');
+    setMenu(false);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.shipments-panel h2')?.focus();
+      document
+        .querySelector('.shipments-panel')
+        ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    });
+  }
   const operator = data?.account.role === 'operator';
   const title = ['inventory', 'transfers', 'cash', 'payouts', 'returns'].includes(nav)
     ? labels[nav]
@@ -380,6 +432,7 @@ export function App() {
               (n) =>
                 operator ||
                 ['overview', 'shipments', 'cash'].includes(n.id) ||
+                (n.id === 'earnings' && data?.account.role === 'courier') ||
                 (n.id === 'returns' &&
                   ['merchant', 'courier'].includes(data?.account.role ?? '')) ||
                 (n.id === 'payouts' && data?.account.role === 'merchant') ||
@@ -548,12 +601,6 @@ export function App() {
                   <RefreshCw size={16} />
                   تحديث
                 </button>
-                {['operator', 'merchant'].includes(data?.account.role ?? '') && (
-                  <button className="button primary" onClick={() => setCreating(true)}>
-                    <Plus size={18} />
-                    إنشاء شحنة
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -568,94 +615,159 @@ export function App() {
                 {operator && ['overview', 'shipments'].includes(nav) && (
                   <PickupAlerts onOpen={setSelected} />
                 )}
-                {nav === 'overview' && (
+                {lastUpdated && (
+                  <p className="dashboard-freshness" role="status">
+                    {dataStale
+                      ? 'تعذر التحديث التلقائي؛ البيانات المعروضة من آخر قراءة ناجحة.'
+                      : 'تحديث تلقائي كل 10 ثوانٍ أثناء عرض الصفحة.'}{' '}
+                    آخر تحديث: {date(lastUpdated)}
+                  </p>
+                )}
+                {nav === 'overview' && data.account.role !== 'courier' && (
                   <>
                     <div className="stats-grid">
                       <Metric
                         title="إجمالي الشحنات"
                         value={data.stats.total}
                         icon={Package}
-                        subtitle="الشحنات الظاهرة لحسابك"
+                        subtitle="افتح الشحنات المحملة لحسابك"
+                        onClick={() => openShipmentFilter('all')}
                       />
                       <Metric
                         title="قيد التنفيذ"
                         value={data.stats.active}
                         icon={Truck}
-                        subtitle="من الإسناد حتى اكتمال المهمة"
+                        subtitle="من التجهيز حتى اكتمال المهمة"
+                        onClick={() => openShipmentFilter('active')}
                       />
                       <Metric
                         title="تم التسليم"
                         value={data.stats.delivered}
                         icon={CheckCheck}
-                        subtitle="شحنات مكتملة التسليم"
+                        subtitle="افتح الشحنات مكتملة التسليم"
+                        onClick={() => openShipmentFilter('delivered')}
                       />
                       <Metric
                         title="تحتاج متابعة"
                         value={data.stats.exceptions}
                         icon={Clock3}
-                        subtitle="حالات تعذر التسليم"
+                        subtitle="تعذر التسليم أو انتهاء المهلة أو تأخر الاستلام"
+                        onClick={() => openShipmentFilter('attention')}
                         warning
                       />
                     </div>
+                    <p className="dashboard-scope">
+                      المؤشرات تشمل جميع شحنات حسابك. اضغط المؤشر للبحث في الحالات مع صفحات. قائمة
+                      العمل أدناه تعرض عينة من أحدث الشحنات المحملة.
+                    </p>
                     <div className="overview-grid">
-                      <section className="panel map-panel">
+                      <section className="panel work-queue">
                         <div className="panel-title">
                           <div>
-                            <h2>حركة الشبكة</h2>
-                            <p>نظرة على مراحل التنفيذ الحالية</p>
+                            <h2>قائمة العمل</h2>
+                            <p>شحنات تحتاج إجراءً؛ افتح الشحنة لمراجعتها وتنفيذ الخطوة التالية.</p>
                           </div>
-                          <span className="subtle-chip">
-                            <MapPin size={13} />
-                            دمشق
-                          </span>
                         </div>
-                        <RouteMap shipments={shipments} />
-                        <div className="map-legend">
-                          <span>
-                            <i className="legend-origin" />
-                            نقطة الاستلام
-                          </span>
-                          <span>
-                            <i className="legend-courier" />
-                            مرحلة النقل
-                          </span>
-                          <span>
-                            <i className="legend-destination" />
-                            الوجهة
-                          </span>
+                        <div className="work-queue-list">
+                          {shipments
+                            .filter(
+                              (s) =>
+                                matchesShipmentFilter(s, 'attention') ||
+                                ['ready', 'assigned', 'awaiting_handover'].includes(s.status),
+                            )
+                            .sort(
+                              (a, b) =>
+                                Number(matchesShipmentFilter(b, 'attention')) -
+                                  Number(matchesShipmentFilter(a, 'attention')) ||
+                                new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
+                            )
+                            .slice(0, 5)
+                            .map((s) => (
+                              <button
+                                key={s.id}
+                                className="work-queue-item"
+                                onClick={() => setSelected(s.id)}
+                              >
+                                <div>
+                                  <strong dir="ltr">{s.reference}</strong>
+                                  <small>
+                                    {s.recipientName} · {s.merchantName}
+                                  </small>
+                                  <span>{shipmentGuidance(s).next}</span>
+                                  {s.pickupOverdue && (
+                                    <small className="pickup-late-label">
+                                      تأخر الاستلام من المنشأ
+                                    </small>
+                                  )}
+                                </div>
+                                <div>
+                                  <Status status={s.status} />
+                                  <ChevronLeft size={18} />
+                                </div>
+                              </button>
+                            ))}
+                          {!shipments.some(
+                            (s) =>
+                              matchesShipmentFilter(s, 'attention') ||
+                              ['ready', 'assigned', 'awaiting_handover'].includes(s.status),
+                          ) && (
+                            <p className="scope-note">
+                              لا توجد شحنات معلقة في مراحل الإسناد والتسليم أو تحتاج متابعة ضمن
+                              القائمة المحملة.
+                            </p>
+                          )}
+                        </div>
+                        <div className="flow-footer">
+                          حتى خمس شحنات؛ حالات المتابعة أولًا ثم الأقدم تحديثًا.
                         </div>
                       </section>
                       <section className="panel flow-panel">
                         <div className="panel-title">
                           <div>
                             <h2>نبض العمليات</h2>
-                            <p>توزيع الشحنات حسب مرحلة التنفيذ</p>
+                            <p>توزيع الشحنات المحملة حسب مرحلة التنفيذ (حتى 100)</p>
                           </div>
                           <Activity size={20} />
                         </div>
                         <div className="flow-bars">
-                          {(['ready', 'assigned', 'in_transit', 'delivered'] as const).map((s) => {
-                            const count = shipments.filter((x) => x.status === s).length;
-                            return (
-                              <div className="flow-row" key={s}>
-                                <div>
-                                  <span>{statusLabels[s]}</span>
-                                  <strong>{fmt.format(count)}</strong>
-                                </div>
-                                <div className="flow-track">
-                                  <span
-                                    style={{
-                                      width: `${shipments.length ? (count / shipments.length) * 100 : 0}%`,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {(
+                            [
+                              ...activeShipmentStatuses,
+                              'failed',
+                              'pickup_expired',
+                              'delivered',
+                              'returned',
+                              'cancelled',
+                            ] as Shipment['status'][]
+                          )
+                            .filter((status) => shipments.some((s) => s.status === status))
+                            .map((s) => {
+                              const count = shipments.filter((x) => x.status === s).length;
+                              return (
+                                <button
+                                  type="button"
+                                  className="flow-row flow-filter"
+                                  key={s}
+                                  onClick={() => openShipmentFilter(s)}
+                                >
+                                  <div>
+                                    <span>{statusLabels[s]}</span>
+                                    <strong>{fmt.format(count)}</strong>
+                                  </div>
+                                  <div className="flow-track">
+                                    <span
+                                      style={{
+                                        width: `${shipments.length ? (count / shipments.length) * 100 : 0}%`,
+                                      }}
+                                    />
+                                  </div>
+                                </button>
+                              );
+                            })}
                         </div>
                         <div className="flow-footer">
                           <ShieldCheck size={17} />
-                          <span>المؤشرات محسوبة من قاعدة العرض</span>
+                          <span>اضغط أي مرحلة لفتح شحناتها</span>
                         </div>
                       </section>
                     </div>
@@ -663,9 +775,10 @@ export function App() {
                 )}
                 {data.account.role === 'courier' && ['overview', 'shipments'].includes(nav) && (
                   <CourierTasks
-                    key={data.account.id}
+                    key={`${data.account.id}:${filter}:${nav}`}
                     shipments={shipments}
                     revision={returnRevision}
+                    shipmentFilter={nav === 'shipments' && filter === 'all' ? 'shipments' : filter}
                     onShipment={setSelected}
                     onReturn={setSelectedReturn}
                   />
@@ -674,11 +787,31 @@ export function App() {
                   <section className="panel shipments-panel">
                     <div className="panel-title">
                       <div>
-                        <h2>{nav === 'overview' ? 'الشحنات الأخيرة' : 'جميع الشحنات'}</h2>
+                        <h2 tabIndex={-1}>
+                          {filter === 'attention'
+                            ? 'شحنات تحتاج متابعة'
+                            : filter === 'active'
+                              ? 'شحنات قيد التنفيذ'
+                              : filter !== 'all'
+                                ? statusLabels[filter as Shipment['status']]
+                                : nav === 'overview'
+                                  ? 'الشحنات الأخيرة'
+                                  : 'جميع الشحنات'}
+                        </h2>
                         <p>تتبّع الحالة وافتح التفاصيل للإجراء التالي</p>
                       </div>
-                      <span className="subtle-chip">{fmt.format(shipments.length)} شحنة</span>
+                      <span className="subtle-chip">
+                        {fmt.format(shipmentList?.total ?? 0)} شحنة
+                      </span>
                     </div>
+                    {data.account.role === 'merchant' && nav === 'shipments' && (
+                      <div className="manual-transport-entry">
+                        <p>لديك طرد من طلب خارج التطبيقات المرتبطة؟</p>
+                        <button className="button secondary" onClick={() => setCreating(true)}>
+                          <Plus size={16} /> طلب نقل طرد
+                        </button>
+                      </div>
+                    )}
                     <div className="table-toolbar">
                       <div className="search-field">
                         <Search size={18} />
@@ -697,6 +830,8 @@ export function App() {
                           onChange={(e) => setFilter(e.target.value)}
                         >
                           <option value="all">كل الحالات</option>
+                          <option value="active">قيد التنفيذ</option>
+                          <option value="attention">تحتاج متابعة</option>
                           {Object.entries(statusLabels).map(([v, l]) => (
                             <option key={v} value={v}>
                               {l}
@@ -705,7 +840,20 @@ export function App() {
                         </select>
                       </div>
                     </div>
-                    {visible.length ? (
+                    {listError && (
+                      <p className="alert" role="alert">
+                        {listError}
+                        <button
+                          className="button secondary"
+                          onClick={() => void refresh().catch(report)}
+                        >
+                          إعادة المحاولة
+                        </button>
+                      </p>
+                    )}
+                    {listLoading ? (
+                      <Loading />
+                    ) : visible.length ? (
                       <div className="table-scroll">
                         <table>
                           <thead>
@@ -793,13 +941,30 @@ export function App() {
                     )}
                     <div className="table-footer">
                       <span>
-                        عرض {fmt.format(visible.length)} من {fmt.format(shipments.length)} شحنة · حد
-                        العرض 100
+                        عرض {fmt.format(visible.length)} من {fmt.format(shipmentList?.total ?? 0)}{' '}
+                        شحنة · البحث يشمل جميع شحنات حسابك
                       </span>
-                      <span>
-                        <span className="live-dot" />
-                        متصل بقاعدة العرض
-                      </span>
+                      <div className="button-row">
+                        <button
+                          className="button secondary"
+                          disabled={listLoading || shipmentPage === 0}
+                          onClick={() => setShipmentPage((p) => p - 1)}
+                        >
+                          السابق
+                        </button>
+                        <span>الصفحة {fmt.format(shipmentPage + 1)}</span>
+                        <button
+                          className="button secondary"
+                          disabled={
+                            listLoading ||
+                            !shipmentList ||
+                            (shipmentPage + 1) * shipmentList.pageSize >= shipmentList.total
+                          }
+                          onClick={() => setShipmentPage((p) => p + 1)}
+                        >
+                          التالي
+                        </button>
+                      </div>
                     </div>
                   </section>
                 )}
@@ -835,6 +1000,7 @@ export function App() {
                 )}
                 {nav === 'cash' && <Cash key={data.account.id} account={data.account} />}
                 {nav === 'payouts' && <Payouts key={data.account.id} account={data.account} />}
+                {nav === 'earnings' && <ExecutionEarnings key={data.account.id} />}
                 {nav === 'overview' && (
                   <div className="bottom-note">
                     <Globe2 size={17} />
@@ -859,7 +1025,7 @@ export function App() {
           {toast}
         </div>
       )}
-      {creating && data && (
+      {creating && data?.account.role === 'merchant' && (
         <CreateShipment
           data={data}
           onClose={() => setCreating(false)}
@@ -912,15 +1078,17 @@ function Metric({
   icon: Icon,
   subtitle,
   warning = false,
+  onClick,
 }: {
   title: string;
   value: number;
   icon: typeof Package;
   subtitle: string;
   warning?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <section className={`metric ${warning ? 'metric-warning' : ''}`}>
+    <button type="button" onClick={onClick} className={`metric ${warning ? 'metric-warning' : ''}`}>
       <div className="metric-top">
         <span>{title}</span>
         <div className="metric-icon">
@@ -929,7 +1097,7 @@ function Metric({
       </div>
       <strong>{fmt.format(value)}</strong>
       <small>{subtitle}</small>
-    </section>
+    </button>
   );
 }
 function Loading() {
@@ -1035,9 +1203,10 @@ function CreateShipment({
   onCreated: (id: string) => Promise<void>;
   report: (e: unknown) => void;
 }) {
-  const sites = data.sites.filter((s) => s.merchantId);
+  const sites = data.sites.filter((s) => s.merchantId === data.account.merchantId);
+  const [generatedReference] = useState(() => 'MANUAL-' + key());
   const [input, setInput] = useState<ShipmentInput>({
-    externalReference: 'WEB-' + Date.now().toString(36).toUpperCase(),
+    externalReference: '',
     originId: sites[0]?.id ?? '',
     recipientName: '',
     destination: '',
@@ -1061,7 +1230,13 @@ function CreateShipment({
       if (!quote) {
         const result = await api<Quote>('/api/demo-commerce/quotes', {
           method: 'POST',
-          body: JSON.stringify({ merchantId, input }),
+          body: JSON.stringify({
+            merchantId,
+            input: {
+              ...input,
+              externalReference: input.externalReference.trim() || generatedReference,
+            },
+          }),
         });
         setQuote(result);
       } else {
@@ -1080,8 +1255,8 @@ function CreateShipment({
   }
   return (
     <Modal
-      title="إنشاء شحنة جديدة"
-      subtitle="طرد جاهز للنقل داخل دمشق · تطبيق تجاري تجريبي"
+      title="طلب نقل طرد"
+      subtitle="لطرد من طلب خارج التطبيقات المرتبطة؛ طلبات تريند سي تصل تلقائيًا."
       onClose={onClose}
     >
       <form onSubmit={submit} className="shipment-form">
@@ -1104,17 +1279,6 @@ function CreateShipment({
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            مرجع طلب البيع
-            <input
-              dir="ltr"
-              value={input.externalReference}
-              minLength={3}
-              maxLength={80}
-              onChange={(e) => change('externalReference', e.target.value)}
-              required
-            />
           </label>
           <label>
             اسم المستلم
@@ -1151,9 +1315,24 @@ function CreateShipment({
             />
           </label>
         </div>
+        <details className="optional-order-reference">
+          <summary>إضافة رقم طلب المتجر (اختياري)</summary>
+          <label>
+            رقم الطلب الداخلي في متجرك
+            <input
+              dir="ltr"
+              value={input.externalReference}
+              minLength={3}
+              maxLength={80}
+              onChange={(e) => change('externalReference', e.target.value)}
+              placeholder="إذا كان لديك رقم طلب سابق"
+            />
+          </label>
+          <p className="scope-note">يولّد النظام مرجعًا تلقائيًا عند ترك الحقل فارغًا.</p>
+        </details>
         <div className="form-note">
           <ShieldCheck size={18} />
-          <span>الشريحة الحالية للنقل فقط. لا يُحصّل مال ولا يُحجز مخزون لهذا الطلب.</span>
+          <span>خدمة نقل لطرد جاهز داخل دمشق، دون تحصيل نقدي أو حجز منتجات.</span>
         </div>
         {quote && (
           <div className="quote-summary">
@@ -1177,7 +1356,7 @@ function CreateShipment({
             ) : (
               <ArrowLeft size={17} />
             )}{' '}
-            {quote ? 'تأكيد طلب التنفيذ' : 'عرض خيارات التوصيل'}
+            {quote ? 'تأكيد طلب النقل' : 'حساب تكلفة النقل'}
           </button>
           <button className="button secondary" type="button" onClick={onClose} disabled={busy}>
             إغلاق
@@ -1425,6 +1604,20 @@ function ShipmentDetails({
             <span>الإصدار {s!.version}</span>
             <span>آخر تحديث {date(s!.updatedAt)}</span>
           </div>
+          <section className="journey-focus" aria-label="ملخص الإجراء التالي">
+            <div>
+              <span className="journey-kicker">الإجراء التالي</span>
+              <h3>{shipmentGuidance(s!).next}</h3>
+              <p>
+                المسؤول الآن: <strong>{shipmentGuidance(s!).owner}</strong>
+              </p>
+            </div>
+            <div className="journey-recipient">
+              <span>المستلم</span>
+              <strong>{s!.recipientName}</strong>
+              <small>{s!.destination}</small>
+            </div>
+          </section>
           {commandUncertain && (
             <button
               className="button primary"
@@ -1981,9 +2174,18 @@ function ShipmentDetails({
                     </dd>
                   </div>
                   <div>
-                    <dt>مرجع البيع</dt>
+                    <dt>مرجع الطلب المرتبط</dt>
                     <dd dir="ltr">{s!.externalReference}</dd>
                   </div>
+                  {role === 'operator' && s!.deliveryPayee && (
+                    <div>
+                      <dt>جهة استحقاق أجور التوصيل عند التنفيذ</dt>
+                      <dd>
+                        {s!.deliveryPayee.name} ·{' '}
+                        {s!.deliveryPayee.companyId ? 'مكتب توصيل' : 'مندوب مستقل'}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </div>
               <div className="detail-card">
@@ -2141,6 +2343,7 @@ function Network({
   notify: (s: string) => void;
   onChanged: () => Promise<void>;
 }) {
+  const [siteCategory, setSiteCategory] = useState('pickup');
   const [editing, setEditing] = useState<Site | 'new' | null>(null);
   const [audit, setAudit] = useState<
     {
@@ -2170,118 +2373,133 @@ function Network({
         <section className="panel">
           <div className="panel-title">
             <div>
-              <h2>مواقع الشبكة</h2>
-              <p>بيانات مواقع اصطناعية للتجربة</p>
+              <h2>
+                {siteCategory === 'pickup'
+                  ? 'نقاط الاستلام'
+                  : siteCategory === 'store'
+                    ? 'المتاجر'
+                    : 'مواقع التخزين والتجميع'}
+              </h2>
+              <p>المتجر مصدر الطلب، ونقطة الاستلام جهة تسليم العميل؛ لكل منهما إدارة مستقلة.</p>
             </div>
-            <button className="button primary" onClick={() => setEditing('new')}>
-              <Plus size={16} />
-              إضافة نقطة استلام
-            </button>
+            {siteCategory === 'pickup' && (
+              <button className="button primary" onClick={() => setEditing('new')}>
+                <Plus size={16} />
+                إضافة نقطة استلام
+              </button>
+            )}
           </div>
-          {data.sites.map((s) => (
-            <div
-              className={`site-item ${s.kind === 'pickup' ? 'pickup-network-card' : ''}`}
-              key={s.id}
-            >
-              <span className="site-icon">
-                {s.kind === 'store' ? <Store size={21} /> : <Box size={21} />}
-              </span>
-              <div>
-                <strong>{s.name}</strong>
-                {s.kind === 'pickup' && (
-                  <small>
-                    {s.ratingCount
-                      ? `★ ${s.rating} / 5 · ${s.ratingCount} تقييم`
-                      : 'لا توجد تقييمات بعد'}
-                  </small>
-                )}
-                <p>{s.address}</p>
-                {s.kind === 'pickup' && (
-                  <>
-                    <span className={`availability ${s.pickupEnabled ? 'on' : ''}`}>
-                      {s.pickupEnabled ? 'تستقبل طلبات جديدة' : 'متوقفة للطلبات الجديدة'}
-                    </span>
-                    <div className="capacity">
-                      <span>الوزن المحجوز</span>
-                      <b>
-                        {fmt.format(s.reservedKg)} / {fmt.format(s.pickupCapacityKg)} كغ
-                      </b>
-                    </div>
-                    <div className="flow-track">
-                      <span
-                        style={{
-                          width: `${Math.min(100, (s.reservedKg / s.pickupCapacityKg) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-              <span className="subtle-chip">
-                {s.kind === 'store'
-                  ? 'متجر'
-                  : s.kind === 'warehouse'
-                    ? 'موقع تخزين'
-                    : s.kind === 'hub'
-                      ? 'مركز'
-                      : 'نقطة استلام'}
-              </span>
-              {s.kind === 'pickup' && (
-                <button
-                  className="button secondary"
-                  onClick={() => setEditing(s)}
-                  aria-label={'إدارة ' + s.name}
-                >
-                  <Settings2 size={15} />
-                  إدارة
-                </button>
-              )}
-            </div>
-          ))}
-          <p className="scope-note">
-            إيقاف النقطة يمنع الطلبات الجديدة ويحافظ على معالجة الطرود الموجودة. إدارة المستودعات
-            وساعات العمل والتعاقدات تضاف في المراحل التالية.
-          </p>
-        </section>
-        <section className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>فريق النقل</h2>
-              <p>السعة محجوزة بحسب المهام النشطة</p>
-            </div>
-            <Users size={20} />
+          <div className="partner-tabs" aria-label="أنواع المواقع">
+            {(['pickup', 'store', 'storage'] as const).map((category) => (
+              <button
+                className="button secondary"
+                aria-pressed={siteCategory === category}
+                key={category}
+                onClick={() => setSiteCategory(category)}
+              >
+                {category === 'pickup'
+                  ? 'نقاط الاستلام'
+                  : category === 'store'
+                    ? 'المتاجر'
+                    : 'التخزين والتجميع'}
+              </button>
+            ))}
           </div>
-          {data.couriers.map((c) => (
-            <div className="courier-card" key={c.id}>
-              <div className="split">
-                <div className="courier-name">
-                  <span className="avatar">{c.name.charAt(0)}</span>
-                  <div>
-                    <strong>{c.name}</strong>
+          {data.sites
+            .filter((s) =>
+              siteCategory === 'storage'
+                ? ['warehouse', 'hub'].includes(s.kind)
+                : s.kind === siteCategory,
+            )
+            .map((s) => (
+              <div
+                className={`site-item ${s.kind === 'pickup' ? 'pickup-network-card' : ''}`}
+                key={s.id}
+              >
+                <span className="site-icon">
+                  {s.kind === 'store' ? <Store size={21} /> : <Box size={21} />}
+                </span>
+                <div>
+                  <strong>{s.name}</strong>
+                  {s.kind === 'pickup' && (
                     <small>
-                      {c.ratingCount
-                        ? `★ ${c.rating} / 5 · ${c.ratingCount} تقييم`
+                      {s.ratingCount
+                        ? `★ ${s.rating} / 5 · ${s.ratingCount} تقييم`
                         : 'لا توجد تقييمات بعد'}
                     </small>
-                    <small>{c.vehicle}</small>
-                  </div>
+                  )}
+                  <p>{s.address}</p>
+                  {s.kind === 'pickup' && (
+                    <>
+                      {(s.latitude == null || s.longitude == null) && (
+                        <small className="pickup-late-label">
+                          الموقع غير محدد؛ لن تظهر ضمن اختيار الأقرب. حدده من «إدارة».
+                        </small>
+                      )}
+                      <span className={`availability ${s.pickupEnabled ? 'on' : ''}`}>
+                        {s.pickupEnabled ? 'تستقبل طلبات جديدة' : 'متوقفة للطلبات الجديدة'}
+                      </span>
+                      <div className="capacity">
+                        <span>الوزن المحجوز</span>
+                        <b>
+                          {fmt.format(s.reservedKg)} / {fmt.format(s.pickupCapacityKg)} كغ
+                        </b>
+                      </div>
+                      <div className="flow-track">
+                        <span
+                          style={{
+                            width: `${Math.min(100, (s.reservedKg / s.pickupCapacityKg) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
-                <span className={`availability ${c.available ? 'on' : ''}`}>
-                  {c.available ? 'متاح' : 'غير متاح'}
+                <span className="subtle-chip">
+                  {s.kind === 'store'
+                    ? 'متجر'
+                    : s.kind === 'warehouse'
+                      ? 'موقع تخزين'
+                      : s.kind === 'hub'
+                        ? 'مركز'
+                        : 'نقطة استلام'}
                 </span>
+                {s.kind === 'pickup' && (
+                  <button
+                    className="button secondary"
+                    onClick={() => setEditing(s)}
+                    aria-label={'إدارة ' + s.name}
+                  >
+                    <Settings2 size={15} />
+                    إدارة
+                  </button>
+                )}
+                {['pickup', 'store'].includes(s.kind) && (
+                  <RemovePartner
+                    kind="sites"
+                    id={s.id}
+                    name={s.name}
+                    version={s.version}
+                    onRemoved={async () => {
+                      await onChanged();
+                      await loadAudit();
+                      notify('أُزيل الموقع من الشبكة مع حفظ سجلاته السابقة');
+                    }}
+                  />
+                )}
               </div>
-              <div className="capacity">
-                <span>الحمولة المحجوزة</span>
-                <b>
-                  {fmt.format(c.activeKg)} / {fmt.format(c.capacityKg)} كغ
-                </b>
-              </div>
-              <div className="flow-track">
-                <span style={{ width: `${(c.activeKg / c.capacityKg) * 100}%` }} />
-              </div>
-            </div>
-          ))}
+            ))}
+          <p className="scope-note">
+            إيقاف النقطة يمنع الطلبات الجديدة ويحافظ على معالجة الطرود الموجودة.
+          </p>
         </section>
+        <DeliveryPartners
+          data={data}
+          onChanged={async () => {
+            await onChanged();
+            await loadAudit();
+          }}
+        />
       </div>
       <section className="panel network-audit">
         <div className="panel-title">
@@ -2302,14 +2520,29 @@ function Network({
               <span className="subtle-chip">
                 {e.action === 'created'
                   ? 'إضافة نقطة'
-                  : e.action === 'inventory_site_created'
-                    ? 'إضافة موقع تخزين'
-                    : e.action === 'inventory_products_registered'
-                      ? 'ربط منتجات'
-                      : 'تعديل إعدادات'}
+                  : e.action.endsWith('.archived')
+                    ? 'إزالة من الشبكة'
+                    : e.action === 'companies.created'
+                      ? 'إضافة مكتب'
+                      : e.action === 'companies.updated'
+                        ? 'تعديل مكتب'
+                        : e.action === 'couriers.created'
+                          ? 'إضافة مندوب'
+                          : e.action === 'couriers.updated'
+                            ? 'تعديل مندوب'
+                            : e.action === 'inventory_site_created'
+                              ? 'إضافة موقع تخزين'
+                              : e.action === 'inventory_products_registered'
+                                ? 'ربط منتجات'
+                                : 'تعديل إعدادات'}
               </span>
               <div>
-                <b>{data.sites.find((s) => s.id === e.siteId)?.name ?? e.siteId}</b>
+                <b>
+                  {data.sites.find((s) => s.id === e.siteId)?.name ??
+                    data.couriers.find((c) => c.id === e.siteId)?.name ??
+                    data.deliveryCompanies?.find((c) => c.id === e.siteId)?.name ??
+                    e.siteId}
+                </b>
                 <p>{e.reason}</p>
                 <small>
                   {e.actorName} · {new Date(e.createdAt).toLocaleString('ar-SY')}
@@ -2357,7 +2590,7 @@ function PickupSiteEditor({
     address: existing?.address ?? '',
     capacityKg: String(existing?.pickupCapacityKg ?? 100),
     enabled: existing?.pickupEnabled ?? true,
-    reason: '',
+    reason: existing ? 'تحديث إعدادات نقطة الاستلام' : 'إضافة نقطة استلام جديدة',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -2375,6 +2608,7 @@ function PickupSiteEditor({
       }
       const body = JSON.stringify({
         ...form,
+        address: form.address.trim() || 'موقع محدد على الخريطة، دمشق',
         capacityKg: Number(form.capacityKg),
         location,
         ...(existing ? { expectedVersion: existing.version } : {}),
@@ -2427,9 +2661,8 @@ function PickupSiteEditor({
             />
           </label>
           <label>
-            العنوان في دمشق
+            وصف البناء في دمشق (اختياري)
             <input
-              required
               minLength={5}
               maxLength={130}
               value={form.address}
@@ -2439,9 +2672,7 @@ function PickupSiteEditor({
           <div className="span-two">
             <h3>موقع نقطة الاستلام</h3>
             <p className="muted">حدد مكان النقطة لتظهر ضمن اقتراح الأقرب للعميل.</p>
-            <Suspense fallback={<p>جارٍ تحميل الخريطة…</p>}>
-              <AddressMap point={location} onChange={setLocation} />
-            </Suspense>
+            <PartnerLocation point={location} onChange={setLocation} />
           </div>
           <label>
             السعة القصوى بالكيلوغرام
@@ -2483,7 +2714,7 @@ function PickupSiteEditor({
           </label>
         </fieldset>
         <div className="button-row">
-          <button className="button primary" disabled={busy}>
+          <button className="button primary" disabled={busy || (!existing && !location)}>
             {busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}
             {committed ? 'إعادة تحميل الشبكة' : 'حفظ إعدادات النقطة'}
           </button>

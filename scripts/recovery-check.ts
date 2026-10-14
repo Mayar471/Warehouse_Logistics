@@ -11,17 +11,23 @@ try {
   await page.getByRole('heading', { name: 'مطابقة حالات التطبيق', exact: true }).waitFor();
   if (await page.getByRole('button', { name: 'محاكاة توقف المستقبل', exact: true }).count())
     await page.getByRole('button', { name: 'محاكاة توقف المستقبل', exact: true }).click();
-  await page.getByRole('button', { name: 'إنشاء شحنة', exact: true }).click();
+  await page.getByLabel('حساب العرض').selectOption('merchant-a');
+  await page.getByRole('heading', { name: 'طلبات متجرك', exact: true }).waitFor();
+  await page.getByRole('navigation').getByRole('button', { name: 'الشحنات' }).click();
+  await page.getByRole('button', { name: 'طلب نقل طرد', exact: true }).click();
   const modal = page.getByRole('dialog');
   await modal.getByLabel('اسم المستلم').fill('عميل فحص التعافي');
   await modal.getByLabel('عنوان التسليم').fill('دمشق، شارع اختبار');
-  await modal.getByRole('button', { name: 'عرض خيارات التوصيل' }).click();
+  await modal.getByRole('button', { name: 'حساب تكلفة النقل' }).click();
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/demo-commerce/orders') && r.request().method() === 'POST',
   );
-  await modal.getByRole('button', { name: 'تأكيد طلب التنفيذ' }).click();
+  await modal.getByRole('button', { name: 'تأكيد طلب النقل' }).click();
   const s = await (await created).json();
   await page.getByRole('button', { name: 'إغلاق النافذة' }).click();
+  await page.getByLabel('حساب العرض').selectOption('ops');
+  await page.getByRole('heading', { name: 'مركز العمليات', exact: true }).waitFor();
+  await page.getByRole('navigation').getByRole('button', { name: 'مختبر التكامل' }).click();
   for (let i = 0; i < 8; i++) {
     const sent = page.waitForResponse((r) => r.url().endsWith('/api/integration/flush'));
     await page.getByRole('button', { name: 'إعادة محاولة المعلق', exact: true }).click();
