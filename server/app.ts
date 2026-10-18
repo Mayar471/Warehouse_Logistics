@@ -1,6 +1,12 @@
 import { registerRefunds } from './customer-refunds.js';
 import { registerShipmentSearch } from './shipment-search.js';
 import { registerExecutionEarnings } from './execution-earnings.js';
+import { registerPartnerPayments } from './partner-payments.js';
+import { registerPickupHours } from './pickup-hours.js';
+import { registerDisputes } from './disputes.js';
+import { registerDispatch } from './dispatch.js';
+import type { RoutingProvider } from './routing.js';
+import { pickupOpening, type PickupSchedule } from '../shared/pickup-hours.js';
 import { registerNotifications } from './notifications.js';
 import { registerCommercialReturns, expireCommercialReturns } from './commercial-returns.js';
 import { registerFinancialRecovery } from './financial-recovery.js';
@@ -39,6 +45,7 @@ import {
 
 const inputSchema = z
   .object({
+    priority: z.enum(['normal', 'urgent']).default('normal'),
     collection: z
       .object({
         goodsMinor: z.number().int().positive().max(1000000000000),
@@ -109,6 +116,7 @@ export function buildApp(
     demoMode: boolean;
     logger?: boolean;
     clock?: () => number;
+    routingProvider?: RoutingProvider;
     receiverUrl?: string;
     allowedOrigins?: string[];
     transport?: (raw: string, headers: Record<string, string>) => Promise<number>;
@@ -140,6 +148,9 @@ export function buildApp(
       await expireTransfers(tx, clock());
       await expireCommercialReturns(tx, clock());
       await expireSharing(tx, clock());
+      await tx.query('DELETE FROM dispatch_locations WHERE measured_at<=$1', [
+        new Date(clock() - 5 * 60_000).toISOString(),
+      ]);
       return shipments;
     });
   const sessions = new Map<string, { account: Account; expiresAt: number }>();
@@ -159,6 +170,36 @@ export function buildApp(
       .header('Referrer-Policy', 'no-referrer')
       .header('X-Frame-Options', 'DENY');
     reply.header('Cache-Control', 'no-store');
+    const current = req.cookies.session ? sessions.get(hash(req.cookies.session)) : undefined;
+    if (
+      current?.account.role === 'company' &&
+      current.expiresAt > Date.now() &&
+      req.url.startsWith('/api/')
+    ) {
+      const path = req.url.split('?')[0];
+      const allowed =
+        (req.method === 'GET' &&
+          ([
+            '/api/bootstrap',
+            '/api/demo/accounts',
+            '/api/execution-earnings',
+            '/api/partner-payments',
+            '/api/company-portal',
+            '/api/notifications',
+          ].includes(path) ||
+            path === '/api/disputes' ||
+            path === '/api/disputes/subjects' ||
+            /^\/api\/disputes\/[0-9a-f-]+$/.test(path))) ||
+        (req.method === 'POST' &&
+          (['/api/demo/session', '/api/financial-commands/status'].includes(path) ||
+            /^\/api\/partner-payments\/[0-9a-f-]+\/actions$/.test(path) ||
+            path === '/api/notifications/read' ||
+            path === '/api/disputes' ||
+            /^\/api\/disputes\/[0-9a-f-]+\/actions$/.test(path))) ||
+        (req.method === 'DELETE' && path === '/api/session') ||
+        path.startsWith('/api/storefront/');
+      assert(allowed, 403, 'FORBIDDEN', 'حساب المكتب مخول ببوابته وأجوره فقط');
+    }
     const now = Date.now();
     if (limits.size > 2000)
       for (const [key, value] of limits) if (value.until < now) limits.delete(key);
@@ -266,7 +307,9 @@ export function buildApp(
   registerCash(app, write, account, clock);
   registerFinancialRecovery(app, write, account);
   registerCommercialReturns(app, write, account, clock);
-  registerNotifications(app, write, account);
+  registerNotifications(app, write, account, undefined, clock);
+  registerDisputes(app, write, account, clock);
+  registerDispatch(app, write, account, clock, options.routingProvider);
   registerPayouts(app, write, account, clock);
   registerRefunds(app, write, account, clock);
   registerInventory(app, db, write, account);
@@ -284,6 +327,20 @@ export function buildApp(
   });
   registerShipmentSearch(app, db, account);
   registerExecutionEarnings(app, db, account);
+  registerPartnerPayments(app, write, account);
+  registerPickupHours(app, write, account, clock);
+  app.get('/api/company-portal', async (req) => {
+    const a = account(req);
+    assert(a.role === 'company' && a.companyId, 403, 'FORBIDDEN', 'بوابة المكتب لحسابه فقط');
+    return {
+      couriers: (
+        await db.query(
+          'SELECT id,name,vehicle,available,archived_at IS NOT NULL AS archived FROM couriers WHERE company_id=$1 ORDER BY name',
+          [a.companyId],
+        )
+      ).rows,
+    };
+  });
   async function availableAccounts(): Promise<Account[]> {
     const activeCouriers = new Set(
       (
@@ -302,6 +359,18 @@ export function buildApp(
       )
     ).rows;
     return [
+      ...(
+        await db.query<{ id: string; name: string }>(
+          'SELECT id,name FROM delivery_companies ORDER BY name',
+        )
+      ).rows.map((c) => ({
+        id: 'office-' + c.id,
+        name: c.name,
+        role: 'company' as const,
+        companyId: c.id,
+        courierId: null,
+        merchantId: null,
+      })),
       ...demoAccounts.filter(
         (a) =>
           (!a.courierId || activeCouriers.has(a.courierId)) &&
@@ -370,6 +439,15 @@ export function buildApp(
 
   app.get('/api/bootstrap', async (req) => {
     const a = account(req);
+    if (a.role === 'company')
+      return {
+        account: a,
+        deliveryCompanies: [],
+        shipments: [],
+        couriers: [],
+        sites: [],
+        stats: { total: 0, active: 0, delivered: 0, exceptions: 0 },
+      };
     let where = '';
     let params: string[] = [];
     if (a.role === 'merchant') {
@@ -425,11 +503,12 @@ export function buildApp(
       a.role === 'merchant'
         ? 'SELECT * FROM sites WHERE merchant_id=$1'
         : a.role === 'courier'
-          ? 'SELECT * FROM sites WHERE id IN (SELECT origin_id FROM shipments WHERE courier_id=$1)'
+          ? 'SELECT * FROM sites WHERE id IN (SELECT origin_id FROM shipments WHERE courier_id=$1 UNION SELECT pickup_site_id FROM shipments WHERE courier_id=$1)'
           : a.role === 'pickup'
             ? 'SELECT * FROM sites WHERE id=$1'
             : 'SELECT * FROM sites';
     const siteResult = await db.query<{
+      pickup_schedule: PickupSchedule;
       id: string;
       name: string;
       city: string;
@@ -466,6 +545,7 @@ export function buildApp(
       ratingCount: s.ratingCount,
       version: s.version,
       pickupEnabled: s.pickup_enabled,
+      openingStatus: s.kind === 'pickup' ? pickupOpening(s.pickup_schedule, clock()) : undefined,
       pickupCapacityKg: s.pickup_capacity_kg,
       reservedKg: reservedBySite.get(s.id) ?? 0,
       id: s.id,
@@ -575,14 +655,16 @@ export function buildApp(
   app.post('/api/v1/quotes', async (req) => {
     const identity = appIdentity(req);
     const input = inputSchema.parse(req.body);
-    return write((tx) => createQuote(tx, identity.applicationId, identity.merchantId, input));
+    return write((tx) =>
+      createQuote(tx, identity.applicationId, identity.merchantId, input, clock()),
+    );
   });
   app.post('/api/v1/fulfillments', async (req) => {
     const identity = appIdentity(req);
     const body = z.object({ quoteId: uuid }).strict().parse(req.body);
     const key = requestKey(req);
     return write((tx) =>
-      createShipment(tx, identity.applicationId, identity.merchantId, body.quoteId, key),
+      createShipment(tx, identity.applicationId, identity.merchantId, body.quoteId, key, clock()),
     );
   });
   app.get('/api/v1/fulfillments/:id', async (req) => {

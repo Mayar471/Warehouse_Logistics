@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { needsProof, verifyProof } from './delivery-proof.js';
 import { reserveCheckout, inventoryTransition } from './inventory.js';
 import { collection, collectCash } from './cash-ledger.js';
+import { requirePickupOpen } from './pickup-hours.js';
 import type { CashConfirmation } from '../shared/cash.js';
 import type { PGlite } from '@electric-sql/pglite';
 import type {
@@ -58,6 +59,7 @@ export async function mapShipment(tx: Transaction, row: ShipmentRow): Promise<Sh
   );
   const n = names.rows[0];
   return {
+    priority: row.priority,
     deliveryLocation: n.location,
     deliveryPayee: n.payee,
     deliveryCourier: n.deliveredBy,
@@ -182,7 +184,15 @@ export async function createQuote(
   applicationId: string,
   merchantId: string,
   input: ShipmentInput,
+  now = Date.now(),
 ) {
+  input = { ...input, priority: input.priority ?? 'normal' };
+  assert(
+    ['normal', 'urgent'].includes(input.priority!),
+    422,
+    'INVALID_PRIORITY',
+    'أولوية الطلب غير صالحة',
+  );
   const sites = await tx.query<{ merchant_id: string; city: string }>(
     'SELECT merchant_id,city FROM sites WHERE id=$1 AND archived_at IS NULL',
     [input.originId],
@@ -222,7 +232,7 @@ export async function createQuote(
       destination: point.rows[0].address,
       pickupSiteVersion: point.rows[0].version,
     };
-    await checkPickupCapacity(tx, input.pickupSiteId!, input.weightKg);
+    await checkPickupCapacity(tx, input.pickupSiteId!, input.weightKg, undefined, now);
   }
   const feeMinor = 3_500_000 + Math.ceil(Math.max(input.weightKg - 2, 0)) * 500_000;
   if (input.collection)
@@ -236,11 +246,15 @@ export async function createQuote(
       'مبلغ التحصيل أو عملته خارج حدود الخدمة',
     );
   const quote = {
+    priority: input.priority!,
     id: randomUUID(),
     feeMinor,
     currency: 'SYP',
-    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-    estimateLabel: 'خلال يوم العمل — تقدير تجريبي',
+    expiresAt: new Date(now + 10 * 60_000).toISOString(),
+    estimateLabel:
+      input.priority === 'urgent'
+        ? 'أولوية مستعجلة — موعد التسليم يحدده توفر التنفيذ'
+        : 'خلال يوم العمل — تقدير تجريبي',
   };
   await tx.query('INSERT INTO quotes VALUES($1,$2,$3,$4,$5,$6,$7,false)', [
     quote.id,
@@ -260,6 +274,7 @@ export async function createShipment(
   merchantId: string,
   quoteId: string,
   key: string,
+  timestamp = Date.now(),
 ) {
   return idempotent(tx, `${applicationId}:${merchantId}:create`, key, { quoteId }, async () => {
     const quotes = await tx.query<{
@@ -276,7 +291,7 @@ export async function createShipment(
     const q = quotes.rows[0];
     assert(q, 404, 'QUOTE_NOT_FOUND', 'عرض الخدمة غير موجود');
     assert(
-      !q.consumed && new Date(q.expires_at).getTime() > Date.now(),
+      !q.consumed && new Date(q.expires_at).getTime() > timestamp,
       409,
       'QUOTE_EXPIRED',
       'انتهت صلاحية عرض الخدمة أو استُخدم مسبقًا',
@@ -292,13 +307,14 @@ export async function createShipment(
       'موقع المنشأ أُزيل من الشبكة؛ اطلب عرضًا جديدًا',
     );
     const id = randomUUID();
-    const now = new Date().toISOString();
+    const now = new Date(timestamp).toISOString();
     if (q.input.pickupSiteId)
       await checkPickupCapacity(
         tx,
         q.input.pickupSiteId,
         q.input.weightKg,
         q.input.pickupSiteVersion ?? 0,
+        timestamp,
       );
     const reference = 'SHP-' + randomBytes(4).toString('hex').toUpperCase();
     const old = await tx.query(
@@ -313,8 +329,8 @@ export async function createShipment(
     );
     await tx.query(
       `INSERT INTO shipments(id,reference,application_id,external_reference,merchant_id,recipient_name,destination,origin_id,
-      weight_kg,status,fee_minor,currency,tracking_token,created_at,updated_at,origin_handover_required)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12,$13,$13,true)`,
+      weight_kg,status,fee_minor,currency,tracking_token,created_at,updated_at,origin_handover_required,priority)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12,$13,$13,true,$14)`,
       [
         id,
         reference,
@@ -329,6 +345,7 @@ export async function createShipment(
         q.currency,
         randomBytes(24).toString('base64url'),
         now,
+        q.input.priority ?? 'normal',
       ],
     );
     if (q.input.pickupSiteId)
@@ -366,6 +383,7 @@ async function checkPickupCapacity(
   id: string,
   weight: number,
   expectedVersion?: number,
+  now = Date.now(),
 ) {
   const site = (
     await tx.query<{ pickup_enabled: boolean; pickup_capacity_kg: number; version: number }>(
@@ -374,6 +392,7 @@ async function checkPickupCapacity(
     )
   ).rows[0];
   assert(site?.pickup_enabled, 422, 'INVALID_PICKUP_SITE', 'نقطة الاستلام غير متاحة');
+  await requirePickupOpen(tx, id, now);
   assert(
     expectedVersion === undefined || expectedVersion === site.version,
     409,
@@ -402,11 +421,18 @@ const activeStatuses = [
   'returning',
 ];
 export async function courierCapacity(tx: Transaction, courierId: string) {
-  const r = await tx.query<{ active_kg: number }>(
-    `SELECT (COALESCE((SELECT SUM(weight_kg) FROM shipments WHERE courier_id=$1 AND status=ANY($2)),0)+COALESCE((SELECT SUM(weight_kg) FROM inventory_transfers WHERE courier_id=$1 AND status IN ('assigned','accepted','released','in_transit')),0)+COALESCE((SELECT SUM(s.weight_kg) FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id WHERE r.courier_id=$1 AND r.status IN ('assigned','accepted','released','in_transit')),0))::real active_kg`,
-    [courierId, activeStatuses],
+  return (await courierWorkloads(tx, courierId)).get(courierId)?.kg ?? 0;
+}
+export async function courierWorkloads(tx: Transaction, courierId?: string | string[]) {
+  const r = await tx.query<{ id: string; kg: number; jobs: number }>(
+    `SELECT id,SUM(weight_kg)::real kg,COUNT(*)::integer jobs FROM (
+      SELECT courier_id id,weight_kg FROM shipments WHERE status=ANY($2)
+      UNION ALL SELECT courier_id,weight_kg FROM inventory_transfers WHERE status IN ('assigned','accepted','released','in_transit')
+      UNION ALL SELECT r.courier_id,s.weight_kg FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id WHERE r.status IN ('assigned','accepted','released','in_transit')
+    ) work WHERE id IS NOT NULL AND ($1::text[] IS NULL OR id=ANY($1)) GROUP BY id`,
+    [typeof courierId === 'string' ? [courierId] : (courierId ?? null), activeStatuses],
   );
-  return r.rows[0].active_kg;
+  return new Map(r.rows.map((row) => [row.id, { kg: row.kg, jobs: row.jobs }]));
 }
 export async function applyAction(
   tx: Transaction,
@@ -420,6 +446,7 @@ export async function applyAction(
   deliveryCode?: string,
   proofSecret?: string,
   cash?: CashConfirmation,
+  dispatchDecision?: string,
 ) {
   const row = await loadShipment(tx, id);
   assert(
@@ -531,6 +558,7 @@ export async function applyAction(
         'INVALID_TRANSITION',
         'يجب تأكيد وصول المندوب قبل استلام عهدة الطرد',
       );
+      await requirePickupOpen(tx, row.pickup_site_id!, now, false);
       next = 'ready_for_pickup';
       custodySiteId = row.pickup_site_id;
       selected = null;
@@ -588,7 +616,7 @@ export async function applyAction(
         'لا يمكن إسناد الشحنة في حالتها الحالية',
       );
       const c = await tx.query<{ available: boolean; capacity_kg: number; name: string }>(
-        'SELECT * FROM couriers WHERE id=$1',
+        'SELECT * FROM couriers WHERE id=$1 AND archived_at IS NULL',
         [courierId],
       );
       assert(c.rows[0]?.available, 422, 'COURIER_UNAVAILABLE', 'المندوب غير متاح');
@@ -604,6 +632,7 @@ export async function applyAction(
       accepted = false;
       expiresAt = new Date(now + 5 * 60_000).toISOString();
       description = `أُسندت الشحنة إلى ${c.rows[0].name}؛ بانتظار قبول المهمة`;
+      if (dispatchDecision) description += `؛ ${dispatchDecision}`;
       break;
     }
     case 'accept':

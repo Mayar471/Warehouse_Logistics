@@ -19,6 +19,7 @@ export interface CustomerAddress extends Coordinates {
   version: number;
 }
 export interface PickupOption {
+  openingStatus?: import('./pickup-hours.js').OpeningStatus;
   id: string;
   name: string;
   address: string;

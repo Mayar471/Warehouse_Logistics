@@ -1,4 +1,4 @@
-export type Role = 'operator' | 'merchant' | 'courier' | 'pickup';
+export type Role = 'operator' | 'merchant' | 'courier' | 'pickup' | 'company';
 export type ShipmentStatus =
   | 'awaiting_handover'
   | 'ready_for_pickup'
@@ -32,6 +32,7 @@ export type Action =
   | 'return'
   | 'receive_return';
 export interface Account {
+  companyId?: string | null;
   id: string;
   name: string;
   role: Role;
@@ -54,6 +55,7 @@ export interface Courier {
   available: boolean;
 }
 export interface Site {
+  openingStatus?: import('./pickup-hours.js').OpeningStatus;
   rating?: number | null;
   ratingCount?: number;
   latitude?: number | null;
@@ -70,6 +72,7 @@ export interface Site {
   merchantId: string | null;
 }
 export interface Shipment {
+  priority: 'normal' | 'urgent';
   deliveryPayee?: { companyId: string | null; name: string } | null;
   deliveryCourier?: { id: string; name: string } | null;
   deliveryLocation?: import('./customer-locations.js').Coordinates | null;
@@ -116,6 +119,7 @@ export interface TimelineEvent {
   createdAt: string;
 }
 export interface Quote {
+  priority: 'normal' | 'urgent';
   id: string;
   feeMinor: number;
   currency: string;
@@ -123,6 +127,7 @@ export interface Quote {
   estimateLabel: string;
 }
 export interface ShipmentInput {
+  priority?: 'normal' | 'urgent';
   collection?: { goodsMinor: number; currency: 'SYP' };
   pickupSiteVersion?: number;
   pickupSiteId?: string;

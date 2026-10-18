@@ -37,7 +37,7 @@ export function FinancialNotice({
   onOpen,
 }: {
   actorId: string;
-  onOpen: (nav: 'cash' | 'payouts' | 'returns') => void;
+  onOpen: (nav: 'cash' | 'payouts' | 'returns' | 'earnings') => void;
 }) {
   const recovery = useFinancialRecovery(actorId);
   if (!recovery.blocked) return null;
@@ -48,11 +48,13 @@ export function FinancialNotice({
         className="button secondary"
         onClick={() =>
           onOpen(
-            recovery.command?.url.startsWith('/api/payouts')
-              ? 'payouts'
-              : recovery.command?.url.startsWith('/api/refunds')
-                ? 'returns'
-                : 'cash',
+            recovery.command?.url.startsWith('/api/partner-')
+              ? 'earnings'
+              : recovery.command?.url.startsWith('/api/payouts')
+                ? 'payouts'
+                : recovery.command?.url.startsWith('/api/refunds')
+                  ? 'returns'
+                  : 'cash',
           )
         }
       >

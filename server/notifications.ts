@@ -4,12 +4,14 @@ import type { UserNotification } from '../shared/notifications.js';
 import { statusLabels } from '../shared/contracts.js';
 import { z } from 'zod';
 import { assert, transactionGate } from './domain.js';
+import { disputeNotifications } from './disputes.js';
 
 export function registerNotifications(
   app: FastifyInstance,
   write: ReturnType<typeof transactionGate>,
   identity: (req: FastifyRequest) => Account | string,
   prefix = '/api/notifications',
+  clock: () => number = Date.now,
 ) {
   async function feed(req: FastifyRequest) {
     const user = identity(req),
@@ -36,7 +38,7 @@ export function registerNotifications(
             : null;
     return write(async (tx) => {
       type Row = {
-        kind: UserNotification['kind'];
+        kind: Exclude<UserNotification['kind'], 'dispute'>;
         id: string;
         reference: string;
         status: string;
@@ -76,9 +78,12 @@ export function registerNotifications(
           : role === 'courier' || role === 'pickup'
             ? 'o.collector_id=$2'
             : 'false AND ($2::text IS NULL OR true)';
-      const rows = (
-        await tx.query<Row>(
-          `SELECT * FROM (
+      const rows =
+        role === 'company'
+          ? []
+          : (
+              await tx.query<Row>(
+                `SELECT * FROM (
         SELECT 'shipment'::text kind,s.id,s.reference,s.status,s.version,s.updated_at at,(s.pickup_overdue OR s.status IN ('failed','pickup_expired')) issue,CASE WHEN s.assignment_accepted THEN 'accepted' ELSE NULL END reply FROM shipments s WHERE ${shipmentScope}
         UNION ALL SELECT 'return',r.id,s.reference,r.status,r.version,COALESCE((SELECT MAX(e.created_at) FROM commercial_return_events e WHERE e.return_id=r.id),r.created_at),r.issue_open,r.inspection_reply FROM commercial_returns r JOIN shipments s ON s.id=r.shipment_id WHERE ${returnScope}
         UNION ALL SELECT 'refund',f.id,s.reference,f.status,f.version,COALESCE((SELECT MAX(e.created_at) FROM customer_refund_events e WHERE e.refund_id=f.id),f.created_at),f.issue_open,NULL FROM customer_refunds f JOIN shipments s ON s.id=f.shipment_id WHERE ${shipmentScope}
@@ -86,9 +91,9 @@ export function registerNotifications(
         UNION ALL SELECT 'payout',p.id,s.reference,p.status,p.version,COALESCE((SELECT MAX(e.created_at) FROM cash_payout_events e WHERE e.payout_id=p.id),p.created_at),p.issue_open,NULL FROM cash_payouts p JOIN shipments s ON s.id=p.shipment_id WHERE ${payoutScope}
         UNION ALL SELECT 'cash',s.id,s.reference,o.status,o.version,COALESCE(o.received_at,o.collected_at,s.created_at),o.issue_open,NULL FROM cash_obligations o JOIN shipments s ON s.id=o.shipment_id WHERE ${cashScope} AND o.status='collected'
       ) n WHERE at > now()-interval '30 days' OR status NOT IN ('delivered','returned','cancelled','rejected','confirmed','received','recovered') OR (kind='return' AND status='received' AND reply IS NULL) ORDER BY issue DESC,(status IN ('delivered','returned','cancelled','rejected','confirmed','received','recovered') AND NOT(kind='return' AND status='received' AND reply IS NULL)),at DESC,kind,id LIMIT 100`,
-          [value ?? null, customer ? null : user.id],
-        )
-      ).rows;
+                [value ?? null, customer ? null : user.id],
+              )
+            ).rows;
       const seen = new Set(
         (
           await tx.query<{ notification_id: string }>(
@@ -188,12 +193,19 @@ export function registerNotifications(
           read: seen.has(id),
         };
       });
+      items.push(
+        ...(await disputeNotifications(tx, audience, role === 'operator', clock())).map((n) => ({
+          ...n,
+          read: seen.has(n.id),
+        })),
+      );
       items.sort(
         (a, b) =>
           Number(b.actionRequired) - Number(a.actionRequired) ||
           b.createdAt.localeCompare(a.createdAt),
       );
-      return { audience, items, unread: items.filter((n) => !n.read).length };
+      const limited = items.slice(0, 100);
+      return { audience, items: limited, unread: limited.filter((n) => !n.read).length };
     });
   }
   app.get(prefix, async (req) => {

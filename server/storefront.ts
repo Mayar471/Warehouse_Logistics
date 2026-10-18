@@ -1,9 +1,10 @@
 import { registerCustomerRefunds } from './customer-refunds.js';
 import { registerNotifications } from './notifications.js';
+import { registerDisputes } from './disputes.js';
 import {
   registerCustomerLocations,
   coordinatesSchema,
-  pickupOptionsSql,
+  pickupOptions,
 } from './customer-locations.js';
 import { commercialReturnSelect, returnEvent } from './commercial-returns.js';
 import type { CommercialReturn } from '../shared/commercial-returns.js';
@@ -55,8 +56,22 @@ export function registerStorefront(
     return createHash('sha256').update(token).digest('hex');
   }
   registerCustomerRefunds(app, write, owner, options.clock ?? Date.now);
-  registerNotifications(app, write, owner, '/api/storefront/notifications');
-  registerCustomerLocations(app, write, owner);
+  registerNotifications(
+    app,
+    write,
+    owner,
+    '/api/storefront/notifications',
+    options.clock ?? Date.now,
+  );
+  registerDisputes(
+    app,
+    write,
+    owner,
+    options.clock ?? Date.now,
+    undefined,
+    '/api/storefront/disputes',
+  );
+  registerCustomerLocations(app, write, owner, options.clock ?? Date.now);
   app.post('/api/storefront/session', async (req, reply) => {
     guard(req);
     if (!req.cookies.shop || !/^[a-f0-9]{64}$/.test(req.cookies.shop))
@@ -66,7 +81,7 @@ export function registerStorefront(
         path: '/',
         maxAge: 60 * 60 * 24 * 7,
       });
-    const pickupSites = (await db.query(pickupOptionsSql + ' ORDER BY s.name')).rows;
+    const pickupSites = await write((tx) => pickupOptions(tx, (options.clock ?? Date.now)()));
     return {
       catalog,
       merchant: 'بيت الشام',
@@ -79,11 +94,16 @@ export function registerStorefront(
     owner(req);
     return { availability: await availability(db) };
   });
+  app.get('/api/storefront/pickup-sites', async (req) => {
+    owner(req);
+    return write(async (tx) => ({ sites: await pickupOptions(tx, (options.clock ?? Date.now)()) }));
+  });
   app.post('/api/storefront/checkouts', async (req, reply) => {
     const ownerHash = owner(req);
     const body = z
       .object({
         paymentMode: z.enum(['none', 'cod']).default('none'),
+        priority: z.enum(['normal', 'urgent']).default('normal'),
         items: z
           .array(
             z.object({ productId: z.string(), quantity: z.number().int().min(1).max(5) }).strict(),
@@ -138,17 +158,24 @@ export function registerStorefront(
     return write(async (tx) => {
       const id = randomUUID();
       const fulfillmentOrigin = await selectStoreOrigin(tx, body.items);
-      const quote = await createQuote(tx, 'demo-commerce', 'merchant-a', {
-        externalReference: 'SHOP-' + id,
-        originId: fulfillmentOrigin.id,
-        ...(body.paymentMode === 'cod'
-          ? { collection: { goodsMinor: subtotalMinor, currency: 'SYP' as const } }
-          : {}),
-        recipientName: body.recipientName,
-        destination,
-        ...(body.pickupSiteId ? { pickupSiteId: body.pickupSiteId } : {}),
-        weightKg: Math.round(weightKg * 100) / 100,
-      });
+      const quote = await createQuote(
+        tx,
+        'demo-commerce',
+        'merchant-a',
+        {
+          externalReference: 'SHOP-' + id,
+          priority: body.priority,
+          originId: fulfillmentOrigin.id,
+          ...(body.paymentMode === 'cod'
+            ? { collection: { goodsMinor: subtotalMinor, currency: 'SYP' as const } }
+            : {}),
+          recipientName: body.recipientName,
+          destination,
+          ...(body.pickupSiteId ? { pickupSiteId: body.pickupSiteId } : {}),
+          weightKg: Math.round(weightKg * 100) / 100,
+        },
+        (options.clock ?? Date.now)(),
+      );
       await tx.query(
         'INSERT INTO storefront_checkouts(id,owner_hash,quote_id,items,subtotal_minor,inventory_required,delivery_location) VALUES($1,$2,$3,$4,$5,true,$6)',
         [

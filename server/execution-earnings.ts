@@ -10,14 +10,18 @@ export function registerExecutionEarnings(
   app.get('/api/execution-earnings', async (req) => {
     const a = account(req);
     assert(
-      ['operator', 'courier'].includes(a.role),
+      ['operator', 'courier', 'company'].includes(a.role),
       403,
       'FORBIDDEN',
       'الأجور للعمليات والمندوب المستقل فقط',
     );
     const where =
-      a.role === 'operator' ? '$1::text IS NULL' : 'e.courier_id=$1 AND e.company_id IS NULL';
-    const scope = [a.role === 'operator' ? null : a.courierId];
+      a.role === 'operator'
+        ? '$1::text IS NULL'
+        : a.role === 'company'
+          ? 'e.company_id=$1'
+          : 'e.courier_id=$1 AND e.company_id IS NULL';
+    const scope = [a.role === 'operator' ? null : a.role === 'company' ? a.companyId : a.courierId];
     const rows = (
       await db.query(
         `SELECT e.shipment_id AS "shipmentId",s.reference,e.beneficiary_name AS "beneficiaryName",e.company_id AS "companyId",e.courier_id AS "courierId",e.rate_bps AS "rateBps",e.fee_minor AS "feeMinor",e.amount_minor::double precision AS "amountMinor",e.currency,e.earned_at AS "earnedAt" FROM execution_earnings e JOIN shipments s ON s.id=e.shipment_id WHERE ${where} ORDER BY e.earned_at DESC,e.shipment_id LIMIT 100`,
@@ -30,6 +34,6 @@ export function registerExecutionEarnings(
         scope,
       )
     ).rows;
-    return { rows, groups, displayLimit: 100, settlementImplemented: false };
+    return { rows, groups, displayLimit: 100, settlementImplemented: true };
   });
 }

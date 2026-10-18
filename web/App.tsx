@@ -8,6 +8,11 @@ import { DeliveryPartners } from './DeliveryPartners.js';
 import { PartnerLocation } from './PartnerLocation.js';
 import { RemovePartner } from './RemovePartner.js';
 import { ExecutionEarnings } from './ExecutionEarnings.js';
+import { PartnerPayments } from './PartnerPayments.js';
+import { CompanyPortal } from './CompanyPortal.js';
+import { PickupHours } from './PickupHours.js';
+import { Disputes } from './Disputes.js';
+import { DispatchLocation, DispatchAssignment } from './Dispatch.js';
 import { matchesShipmentFilter, activeShipmentStatuses } from '../shared/shipment-filters.js';
 import { shipmentGuidance } from './shipment-guidance.js';
 import { Inventory } from './Inventory.js';
@@ -86,6 +91,7 @@ const navItems = [
   { id: 'cash', label: 'التحصيل وعهدة النقد', icon: ShieldCheck },
   { id: 'payouts', label: 'مستحقات المتاجر', icon: ShieldCheck },
   { id: 'earnings', label: 'أجور التوصيل', icon: ShieldCheck },
+  { id: 'disputes', label: 'المتابعات والنزاعات', icon: Activity },
   { id: 'integration', label: 'مختبر التكامل', icon: Activity },
 ];
 const labels: Record<string, string> = {
@@ -98,6 +104,7 @@ const labels: Record<string, string> = {
   cash: 'التحصيل وعهدة النقد',
   payouts: 'مستحقات المتاجر',
   earnings: 'أجور التوصيل',
+  disputes: 'المتابعات والنزاعات',
   integration: 'مختبر التكامل',
 };
 const eventLabels: Record<string, string> = {
@@ -142,6 +149,13 @@ export function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [data, setData] = useState<Bootstrap | null>(null);
   const [nav, setNav] = useState('overview');
+  const [disputeTarget, setDisputeTarget] = useState<{ id: string; stamp: number } | null>(null);
+  const [disputePreset, setDisputePreset] = useState<{
+    kind: 'shipment';
+    id: string;
+    reference: string;
+    stamp: number;
+  } | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
@@ -298,6 +312,8 @@ export function App() {
     try {
       await api('/api/demo/session', { method: 'POST', body: JSON.stringify({ accountId: id }) });
       setSelected(null);
+      setDisputeTarget(null);
+      setDisputePreset(null);
       setSelectedReturn(null);
       setNav('overview');
       setSearch('');
@@ -314,7 +330,11 @@ export function App() {
     setShipmentPage(0);
   }, [search, filter, data?.account.id]);
   useEffect(() => {
-    if (!data || data.account.role === 'courier' || !['overview', 'shipments'].includes(nav))
+    if (
+      !data ||
+      ['courier', 'company'].includes(data.account.role) ||
+      !['overview', 'shipments'].includes(nav)
+    )
       return;
     let disposed = false;
     const criteria = JSON.stringify([data.account.id, nav, search, filter, shipmentPage]);
@@ -372,6 +392,15 @@ export function App() {
           ? (data.sites.find((s) => s.id === data.account.pickupSiteId)?.name ?? 'نقطة الاستلام')
           : labels[nav];
 
+  if (data?.account.role === 'company' && !publicMode)
+    return (
+      <CompanyPortal
+        key={data.account.id}
+        account={data.account}
+        accounts={accounts}
+        onSwitch={(id) => void switchAccount(id)}
+      />
+    );
   if (publicMode)
     return (
       <main className="public-tracking">
@@ -431,7 +460,7 @@ export function App() {
             .filter(
               (n) =>
                 operator ||
-                ['overview', 'shipments', 'cash'].includes(n.id) ||
+                ['overview', 'shipments', 'cash', 'disputes'].includes(n.id) ||
                 (n.id === 'earnings' && data?.account.role === 'courier') ||
                 (n.id === 'returns' &&
                   ['merchant', 'courier'].includes(data?.account.role ?? '')) ||
@@ -447,6 +476,10 @@ export function App() {
                 aria-current={nav === item.id ? 'page' : undefined}
                 onClick={() => {
                   setNav(item.id);
+                  if (item.id === 'disputes') {
+                    setDisputeTarget(null);
+                    setDisputePreset(null);
+                  }
                   setMenu(false);
                 }}
               >
@@ -493,6 +526,13 @@ export function App() {
                 key={data.account.id}
                 identity={data.account.id}
                 onOpen={(item) => {
+                  if (item.kind === 'dispute') {
+                    setDisputePreset(null);
+                    setDisputeTarget({ id: item.targetId, stamp: Date.now() });
+                    setNav('disputes');
+                    setMenu(false);
+                    return;
+                  }
                   if (item.kind === 'shipment') {
                     setSelected(item.targetId);
                     return;
@@ -521,6 +561,7 @@ export function App() {
               </label>
               <select
                 id="account"
+                disabled={loading}
                 value={data?.account.id ?? 'ops'}
                 onChange={(e) => void switchAccount(e.target.value)}
               >
@@ -774,6 +815,9 @@ export function App() {
                   </>
                 )}
                 {data.account.role === 'courier' && ['overview', 'shipments'].includes(nav) && (
+                  <DispatchLocation key={data.account.id} />
+                )}
+                {data.account.role === 'courier' && ['overview', 'shipments'].includes(nav) && (
                   <CourierTasks
                     key={`${data.account.id}:${filter}:${nav}`}
                     shipments={shipments}
@@ -884,6 +928,9 @@ export function App() {
                                     {s.reference}
                                   </button>
                                   <small>{s.merchantName}</small>
+                                  {s.priority === 'urgent' && (
+                                    <small className="dispatch-priority">مستعجل</small>
+                                  )}
                                 </td>
                                 <td>
                                   <strong>{s.recipientName}</strong>
@@ -999,8 +1046,26 @@ export function App() {
                   />
                 )}
                 {nav === 'cash' && <Cash key={data.account.id} account={data.account} />}
+                {nav === 'disputes' && (
+                  <Disputes
+                    key={data.account.id + ':' + (disputePreset?.stamp ?? 'list')}
+                    account={data.account}
+                    target={disputeTarget}
+                    preset={disputePreset ?? undefined}
+                  />
+                )}
+                {nav === 'overview' &&
+                  data.account.role === 'pickup' &&
+                  data.account.pickupSiteId && (
+                    <PickupHours key={data.account.id} siteId={data.account.pickupSiteId} />
+                  )}
                 {nav === 'payouts' && <Payouts key={data.account.id} account={data.account} />}
-                {nav === 'earnings' && <ExecutionEarnings key={data.account.id} />}
+                {nav === 'earnings' && (
+                  <div key={data.account.id}>
+                    <PartnerPayments account={data.account} />
+                    <ExecutionEarnings />
+                  </div>
+                )}
                 {nav === 'overview' && (
                   <div className="bottom-note">
                     <Globe2 size={17} />
@@ -1066,6 +1131,12 @@ export function App() {
           onChanged={refresh}
           report={report}
           notify={setToast}
+          onDispute={(id, reference) => {
+            setSelected(null);
+            setDisputeTarget(null);
+            setDisputePreset({ kind: 'shipment', id, reference, stamp: Date.now() });
+            setNav('disputes');
+          }}
         />
       )}
     </div>
@@ -1374,6 +1445,7 @@ function ShipmentDetails({
   onChanged,
   report,
   notify,
+  onDispute,
 }: {
   id: string;
   data: Bootstrap;
@@ -1381,6 +1453,7 @@ function ShipmentDetails({
   onChanged: () => Promise<void>;
   report: (e: unknown) => void;
   notify: (s: string) => void;
+  onDispute: (id: string, reference: string) => void;
 }) {
   const pendingCommand = useRef<{ body: string; key: string } | null>(null);
   const [detail, setDetail] = useState<{
@@ -1398,7 +1471,8 @@ function ShipmentDetails({
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState('');
   const [commandUncertain, setCommandUncertain] = useState(false);
-  const [courierId, setCourierId] = useState(data.couriers.find((c) => c.available)?.id ?? '');
+  const [dispatchLocked, setDispatchLocked] = useState(false);
+  const [courierId, setCourierId] = useState('');
   const [reason, setReason] = useState('');
   const [deliveryCode, setDeliveryCode] = useState('');
   const [cashAmount, setCashAmount] = useState(''),
@@ -1415,7 +1489,7 @@ function ShipmentDetails({
     void load().catch((e) => setLocalError(e.message));
   }, [load]);
   useEffect(() => {
-    if (busy || confirm || commandUncertain) return;
+    if (busy || confirm || commandUncertain || dispatchLocked) return;
     let stopped = false,
       inFlight = false;
     const refresh = async () => {
@@ -1443,9 +1517,9 @@ function ShipmentDetails({
       window.removeEventListener('focus', wake);
       document.removeEventListener('visibilitychange', wake);
     };
-  }, [id, busy, confirm, commandUncertain]);
+  }, [id, busy, confirm, commandUncertain, dispatchLocked]);
   async function act(action: Action) {
-    if (!detail) return;
+    if (!detail || dispatchLocked) return;
     setBusy(true);
     setLocalError('');
     try {
@@ -1618,6 +1692,13 @@ function ShipmentDetails({
               <small>{s!.destination}</small>
             </div>
           </section>
+          <button
+            className="button secondary"
+            disabled={busy || commandUncertain || dispatchLocked}
+            onClick={() => onDispute(s!.id, s!.reference)}
+          >
+            فتح متابعة لهذه الشحنة
+          </button>
           {commandUncertain && (
             <button
               className="button primary"
@@ -1627,7 +1708,20 @@ function ShipmentDetails({
               إعادة تأكيد الإجراء المعلق
             </button>
           )}
-          <fieldset className="action-panel" disabled={busy || commandUncertain}>
+          {role === 'operator' && ['ready', 'pickup_expired'].includes(s!.status) && (
+            <DispatchAssignment
+              id={id}
+              version={s!.version}
+              disabled={busy || commandUncertain}
+              onLock={setDispatchLocked}
+              onAssigned={async () => {
+                await load();
+                await onChanged();
+                notify('أُسندت المهمة إلى المندوب المرشح؛ بانتظار قبوله');
+              }}
+            />
+          )}
+          <fieldset className="action-panel" disabled={busy || commandUncertain || dispatchLocked}>
             <h3>الخطوة التالية</h3>
             <p className="scope-note">
               {s!.recipientName} · {s!.originName} → {s!.destination}
@@ -1768,13 +1862,15 @@ function ShipmentDetails({
             {role === 'operator' && ['ready', 'pickup_expired'].includes(s!.status) && (
               <div className="inline-action">
                 <label className="sr-only" htmlFor="courier-select">
-                  اختيار المندوب
+                  اختيار المندوب يدويًا
                 </label>
                 <select
                   id="courier-select"
+                  disabled={busy}
                   value={courierId}
                   onChange={(e) => setCourierId(e.target.value)}
                 >
+                  <option value="">اختيار يدوي خارج الترشيح…</option>
                   {data.couriers
                     .filter((c) => c.available)
                     .map((c) => (
@@ -1791,7 +1887,7 @@ function ShipmentDetails({
                   }
                 >
                   <Truck size={17} />
-                  {s!.status === 'pickup_expired' ? 'إسناد الإرجاع' : 'إسناد المهمة'}
+                  {s!.status === 'pickup_expired' ? 'إسناد الإرجاع يدويًا' : 'إسناد يدوي'}
                 </button>
               </div>
             )}
@@ -1891,10 +1987,22 @@ function ShipmentDetails({
                 وتتحرر سعته.
               </p>
             )}
+            {s!.pickupSiteId &&
+              ['in_transit', 'awaiting_handover'].includes(s!.status) &&
+              data.sites.find((p) => p.id === s!.pickupSiteId)?.openingStatus?.openNow ===
+                false && (
+                <p className="alert" role="status">
+                  نقطة الاستلام مغلقة الآن. يبقى الطرد بعهدة المندوب حتى تأكيد الاستلام خلال الدوام،
+                  أو تنفيذ مسار إرجاع معتمد.
+                </p>
+              )}
             {role === 'pickup' && s!.status === 'awaiting_handover' && (
               <button
                 className="button primary"
-                disabled={busy}
+                disabled={
+                  busy ||
+                  data.sites.find((p) => p.id === s!.pickupSiteId)?.openingStatus?.openNow === false
+                }
                 onClick={() => setConfirm('receive_pickup')}
               >
                 تأكيد استلام الطرد من المندوب
@@ -2345,6 +2453,7 @@ function Network({
 }) {
   const [siteCategory, setSiteCategory] = useState('pickup');
   const [editing, setEditing] = useState<Site | 'new' | null>(null);
+  const [hours, setHours] = useState<Site | null>(null);
   const [audit, setAudit] = useState<
     {
       id: string;
@@ -2439,6 +2548,7 @@ function Network({
                       <span className={`availability ${s.pickupEnabled ? 'on' : ''}`}>
                         {s.pickupEnabled ? 'تستقبل طلبات جديدة' : 'متوقفة للطلبات الجديدة'}
                       </span>
+                      <small>{s.openingStatus?.label}</small>
                       <div className="capacity">
                         <span>الوزن المحجوز</span>
                         <b>
@@ -2464,6 +2574,11 @@ function Network({
                         ? 'مركز'
                         : 'نقطة استلام'}
                 </span>
+                {s.kind === 'pickup' && (
+                  <button className="button secondary" onClick={() => setHours(s)}>
+                    ساعات العمل
+                  </button>
+                )}
                 {s.kind === 'pickup' && (
                   <button
                     className="button secondary"
@@ -2565,6 +2680,24 @@ function Network({
             notify('حُفظت إعدادات النقطة وسُجل سبب التغيير');
           }}
         />
+      )}
+      {hours && (
+        <Modal
+          title={`ساعات العمل · ${hours.name}`}
+          subtitle="جدول أسبوعي واستثناءات بتوقيت دمشق"
+          onClose={() => setHours(null)}
+        >
+          <PickupHours
+            siteId={hours.id}
+            editable
+            onSaved={async () => {
+              await onChanged();
+              await loadAudit();
+              setHours(null);
+              notify('حُفظ الدوام والإغلاقات الاستثنائية');
+            }}
+          />
+        </Modal>
       )}
     </>
   );

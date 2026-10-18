@@ -37,6 +37,44 @@ export function CustomerLocations({
     [nearest, setNearest] = useState<PickupOption[] | null>(null),
     [nearMode, setNearMode] = useState(false);
   const [savedReady, setSavedReady] = useState(false);
+  const [freshPoints, setFreshPoints] = useState(points),
+    [pointsError, setPointsError] = useState('');
+  useEffect(() => {
+    if (!pickup) return;
+    let disposed = false,
+      inFlight = false;
+    const refresh = async () => {
+      if (inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      try {
+        const result = await api<{ sites: PickupOption[] }>('/api/storefront/pickup-sites');
+        if (!disposed) {
+          setFreshPoints(result.sites);
+          setPointsError('');
+        }
+      } catch {
+        if (!disposed)
+          setPointsError('تعذر تحديث حالة النقاط. سيُعاد التحقق من الدوام عند تأكيد الطلب.');
+      } finally {
+        inFlight = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [pickup]);
+  useEffect(() => {
+    if (
+      pickup &&
+      selectedPoint &&
+      (freshPoints.find((p) => p.id === selectedPoint)?.openingStatus?.openNow === false ||
+        !freshPoints.some((p) => p.id === selectedPoint))
+    )
+      onPoint('');
+  }, [pickup, selectedPoint, freshPoints, onPoint]);
   const sequence = useRef(0),
     mounted = useRef(true),
     pending = useRef<{ body: string; key: string } | null>(null);
@@ -205,7 +243,14 @@ export function CustomerLocations({
       setBusy(false);
     }
   }
-  const options = nearMode ? (nearest ?? []) : points;
+  const options = nearMode
+    ? (nearest ?? [])
+        .map((p) => ({
+          ...p,
+          openingStatus: freshPoints.find((v) => v.id === p.id)?.openingStatus ?? p.openingStatus,
+        }))
+        .filter((p) => p.openingStatus?.openNow !== false && freshPoints.some((v) => v.id === p.id))
+    : freshPoints;
   return (
     <section
       className="customer-locations"
@@ -221,7 +266,7 @@ export function CustomerLocations({
               setBusy(false);
               setNearMode(false);
               setNearest(null);
-              onPoint(points[0]?.id ?? '');
+              onPoint('');
             }}
           >
             جميع نقاط الاستلام
@@ -391,8 +436,8 @@ export function CustomerLocations({
           )}
           {nearMode && (
             <p>
-              المسافات تقريبية بخط مستقيم. تُعرض حتى خمس نقاط مفعّلة لها موقع محدد؛ السعة تُراجع عند
-              تأكيد الطلب.
+              المسافات تقريبية بخط مستقيم. تُعرض حتى خمس نقاط مفتوحة لها موقع محدد؛ الدوام والسعة
+              يُراجعان عند تأكيد الطلب.
             </p>
           )}
         </>
@@ -403,6 +448,7 @@ export function CustomerLocations({
           {error}
         </p>
       )}
+      {pickup && pointsError && <p role="status">{pointsError}</p>}
       {pickup && (
         <>
           {!nearMode && (
@@ -413,9 +459,10 @@ export function CustomerLocations({
                 value={selectedPoint}
                 onChange={(e) => onPoint(e.target.value)}
               >
+                <option value="">اختر نقطة مفتوحة</option>
                 {options.map((p) => (
-                  <option value={p.id} key={p.id}>
-                    {p.name} · {p.address}
+                  <option value={p.id} key={p.id} disabled={p.openingStatus?.openNow === false}>
+                    {p.name} · {p.address} · {p.openingStatus?.label ?? ''}
                   </option>
                 ))}
               </select>
@@ -427,10 +474,12 @@ export function CustomerLocations({
                 type="button"
                 key={p.id}
                 aria-pressed={selectedPoint === p.id}
+                disabled={p.openingStatus?.openNow === false}
                 onClick={() => onPoint(p.id)}
               >
                 <strong>{p.name}</strong>
                 <span>{p.address}</span>
+                <small>{p.openingStatus?.label}</small>
                 <small>
                   <Star size={14} />{' '}
                   {p.ratingCount
@@ -441,9 +490,10 @@ export function CustomerLocations({
               </button>
             ))}
           </div>
-          {nearMode && nearest?.length === 0 && (
+          {nearMode && nearest !== null && options.length === 0 && (
             <p role="status">
-              لا توجد نقاط مفعلة محددة الموقع حاليًا. يمكنك اختيار نقطة من القائمة العامة.
+              لا توجد نقاط مفتوحة محددة الموقع حاليًا. راجع القائمة العامة أو اختر التوصيل إلى
+              عنوانك.
             </p>
           )}
         </>

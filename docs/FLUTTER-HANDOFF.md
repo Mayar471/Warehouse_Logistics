@@ -1,6 +1,6 @@
 # Flutter developer handoff
 
-Updated: 12 October 2026. This repository contains the Node.js backend, React web reference implementation, shared TypeScript contracts and tests. Flutter implementation belongs under `mobile/`; it has not been created yet.
+Updated: 18 October 2026. This repository contains the Node.js backend, React web reference implementation, shared TypeScript contracts and tests. Flutter implementation belongs under `mobile/`; it has not been created yet.
 
 ## Start here
 
@@ -78,7 +78,18 @@ Read docs/CUSTOMER-LOCATIONS-AND-RATINGS.md. Address CRUD is customer-session sc
 - Bootstrap statistics now cover the full account scope. Bootstrap shipment rows remain a bounded sample; do not derive historical totals from its array length.
 - Couriers and delivery companies expose nullable `rateBps` (basis points: 6000 means 60%). Operators can set it in partner POST/PATCH requests. Missing/null means no agreement; zero is an explicit zero rate.
 - The current outbound assignment captures the agreement. New rate settings apply to new assignments, not deliveries already assigned. An independent courier uses their own rate; an affiliated courier uses the company's rate.
-- `GET /api/execution-earnings` is available to operations and couriers. Operations see all beneficiaries; couriers see only their own independent earnings. It returns bounded `rows`, complete beneficiary `groups`, and `settlementImplemented:false`.
+- `GET /api/execution-earnings` is available to operations, couriers and companies. Operations see all beneficiaries; couriers see only their own independent earnings; companies see only earnings assigned to their company. It returns bounded `rows`, complete beneficiary `groups`, and `settlementImplemented:true`. This flag means the local payout workflow exists; it does not mean the accrued rows were paid.
 - Earnings apply once to the delivery fee, excluding goods value, on home delivery or custody receipt by the pickup point. Customer pickup does not earn a second courier fee. No agreed rate produces a null amount; older executions without an assignment agreement are not automatically reconstructed.
-- This is accrual reporting, not disbursement. Company login and salary payout/recipient confirmation remain unfinished. Do not display these records as paid or subtract them from customer collection totals.
-- Local demo database migration: 26. Authentication and external hosting limitations described above still apply.
+- Earnings remain accrual reporting. Read `/api/partner-payments` for actual local disbursement state, recipient confirmation and returns. A separate externally funded treasury protects goods/customer money. Company demo accounts exist; production authentication and bank transfers remain unfinished. Do not infer payment from an earning row or subtract it from customer collection totals.
+- Local demo database migration: 29. Authentication and external hosting limitations described above still apply.
+## تحديث صرف الشركاء — 18 أكتوبر 2026
+
+أضيف الدور `company` وحقل الحساب الاختياري `companyId` وبوابة مكتب محلية. أجور المندوب التابع للمكتب وإقرار استلامها للمكتب فقط، مع تثبيت المستفيد عند الإسناد. أضيفت واجهات تمويل صندوق الأجور وصرفها واستعادتها؛ [عقد صرف الشركاء والأوامر والمبالغ والحدود](./PARTNER-PAYMENTS.md). جميع الكتابات تدعم منع التكرار وحماية تغير الحساب وسجل الاستعادة المالي. حساب المكتب لا يملك API العمليات أو بيانات العملاء. تسجيل دخول المكتب الإنتاجي ما زال لاحقًا.
+
+## ساعات نقاط الاستلام — ترحيل 28
+
+أضيف `openingStatus` الاختياري للنقاط وقوائم العميل، وGET لقائمة النقاط الحالية، وGET/PUT لجدول النقطة حسب الصلاحيات. لا تقبل النقطة المغلقة طلبًا جديدًا أو عهدة جديدة، لكن تسليم عهدة موجودة لا يُمنع بالدوام. يجب معالجة `PICKUP_CLOSED` و`QUOTE_SITE_CHANGED` وإعادة عرض خيارات العميل؛ الحالة المعروضة لا تضمن بقاء النقطة مفتوحة لاحقًا. [عقد الدوام والأمثلة والحدود](./PICKUP-HOURS.md).
+
+## المتابعات والنزاعات — ترحيل 29
+
+أضيفت مسارات `/api/disputes` للأدوار التشغيلية و`/api/storefront/disputes` للعميل، مع اختيار سجل مخوّل وصفحات وإجماليات وقرار واعتراض وإغلاق. أضيف `kind=dispute` و`page=disputes` للإشعار؛ فتحه يقرأ الحالة فقط. حساب المكتب أصبح يقرأ إشعارات حالاته فقط. إغلاق المتابعة لا يسوّي دفتر المال أو المخزون تلقائيًا. [العقد والأوامر والسياسة والحدود](./DISPUTES.md). فعّل ربط الإصدار ومفتاح التكرار وهوية الحساب عند الإرسال، ولا تعرض الملاحظات الداخلية للأطراف الأخرى.

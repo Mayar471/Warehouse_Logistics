@@ -28,6 +28,13 @@ const keep = new Set([
   'demo_settings',
 ]);
 const operations = new Set([
+  'dispatch_locations',
+  'partner_payments',
+  'partner_money_entries',
+  'partner_payment_events',
+  'disputes',
+  'dispute_participants',
+  'dispute_events',
   'execution_terms',
   'execution_earnings',
   'quotes',

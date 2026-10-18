@@ -73,6 +73,7 @@ export function CourierTasks({
     ...shipments.map((s) => ({
       id: s.id,
       kind: 'shipment' as const,
+      urgent: s.priority === 'urgent',
       reference: s.reference,
       merchant: s.merchantName,
       recipient: s.recipientName,
@@ -87,6 +88,7 @@ export function CourierTasks({
     ...returns.map((r) => ({
       id: r.id,
       kind: 'return' as const,
+      urgent: false,
       reference: r.shipmentReference,
       merchant: r.merchantName,
       recipient: r.recipientName,
@@ -219,6 +221,7 @@ export function CourierTasks({
                       }}
                     >
                       {r.reference}
+                      {r.urgent && <small className="dispatch-priority"> · مستعجل</small>}
                     </button>
                     <small>
                       <span className="task-kind">

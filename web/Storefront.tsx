@@ -1,4 +1,5 @@
 import { CustomerLocations } from './CustomerLocations.js';
+import { Disputes } from './Disputes.js';
 import { ServiceRatings } from './ServiceRatings.js';
 import type { Coordinates, PickupOption } from '../shared/customer-locations.js';
 import { CustomerReturn } from './CustomerReturn.js';
@@ -154,8 +155,18 @@ function readCart(): CartItem[] {
 export function Storefront() {
   const [cart, setCart] = useState<CartItem[]>(readCart);
   const [page, setPage] = useState<
-    'browse' | 'product' | 'cart' | 'checkout' | 'orders' | 'success'
-  >(() => (new URLSearchParams(location.search).get('view') === 'orders' ? 'orders' : 'browse'));
+    'browse' | 'product' | 'cart' | 'checkout' | 'orders' | 'success' | 'disputes'
+  >(() => {
+    const view = new URLSearchParams(location.search).get('view');
+    return view === 'orders' ? 'orders' : view === 'disputes' ? 'disputes' : 'browse';
+  });
+  const [disputeTarget, setDisputeTarget] = useState<{ id: string; stamp: number } | null>(null);
+  const [disputePreset, setDisputePreset] = useState<{
+    kind: 'shipment';
+    id: string;
+    reference: string;
+    stamp: number;
+  } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedProduct, setSelectedProduct] = useState<Product>(catalog[0]);
   const [category, setCategory] = useState('الكل');
@@ -181,6 +192,7 @@ export function Storefront() {
   const [pickupSites, setPickupSites] = useState<PickupOption[]>([]);
   const [deliveryMode, setDeliveryMode] = useState<'home' | 'pickup'>('home');
   const [paymentMode, setPaymentMode] = useState<'none' | 'cod'>('none');
+  const [priority, setPriority] = useState<'normal' | 'urgent'>('normal');
   const [pickupSiteId, setPickupSiteId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -221,7 +233,9 @@ export function Storefront() {
       .then((session) => {
         setPickupSites(session.pickupSites);
         setStock(Object.fromEntries(session.availability.map((p) => [p.productId, p.available])));
-        setPickupSiteId(session.pickupSites[0]?.id ?? '');
+        setPickupSiteId(
+          session.pickupSites.find((p) => p.openingStatus?.openNow !== false)?.id ?? '',
+        );
         setReady(true);
       })
       .catch(() => setError('تعذر الاتصال بالمتجر. حدّث الصفحة للمحاولة مجددًا.'));
@@ -261,7 +275,8 @@ export function Storefront() {
     setError('');
     setFieldErrors({});
     const url = new URL(location.href);
-    if (page === 'orders' || page === 'success') url.searchParams.set('view', 'orders');
+    if (page === 'disputes') url.searchParams.set('view', 'disputes');
+    else if (page === 'orders' || page === 'success') url.searchParams.set('view', 'orders');
     else url.searchParams.delete('view');
     history.replaceState(null, '', url);
   }, [page]);
@@ -334,6 +349,7 @@ export function Storefront() {
           body: JSON.stringify({
             items: cart,
             paymentMode,
+            priority,
             ...address,
             ...(deliveryMode === 'home' && deliveryLocation ? { location: deliveryLocation } : {}),
             ...(deliveryMode === 'pickup'
@@ -447,6 +463,9 @@ export function Storefront() {
         <span>
           <Package size={20} />
           <b dir="ltr">{order.shipment.reference}</b>
+          {order.shipment.priority === 'urgent' && (
+            <strong className="dispatch-priority">مستعجل</strong>
+          )}
         </span>
         <span className={`status status-${order.shipment.status}`}>
           <span />
@@ -460,6 +479,21 @@ export function Storefront() {
           </span>
         ))}
       </div>
+      <button
+        className="shop-edit"
+        onClick={() => {
+          setDisputeTarget(null);
+          setDisputePreset({
+            kind: 'shipment',
+            id: order.shipment.id,
+            reference: order.shipment.reference,
+            stamp: Date.now(),
+          });
+          setPage('disputes');
+        }}
+      >
+        فتح متابعة لهذا الطلب
+      </button>
       {order.shipment.collection && (
         <div className="shop-stock-notice">
           {order.shipment.collection.status === 'pending' &&
@@ -601,12 +635,31 @@ export function Storefront() {
           >
             طلباتي
           </button>
+          <button
+            disabled={!ready || busy}
+            className={page === 'disputes' ? 'selected' : ''}
+            onClick={() => {
+              setDisputePreset(null);
+              setDisputeTarget(null);
+              setQuote(null);
+              setPage('disputes');
+            }}
+          >
+            متابعاتي
+          </button>
         </nav>
         {ready && (
           <Notifications
             identity="customer"
             customer
             onOpen={(item) => {
+              if (item.kind === 'dispute') {
+                setDisputePreset(null);
+                setDisputeTarget({ id: item.targetId, stamp: Date.now() });
+                setPage('disputes');
+                setQuote(null);
+                return;
+              }
               focusNotificationTarget(item.reference);
               setQuote(null);
               setPage('orders');
@@ -1292,6 +1345,34 @@ export function Storefront() {
                           <option value="cod">نقدًا عند الاستلام — محاكاة مالية</option>
                         </select>
                       </label>
+                      <fieldset className="dispatch-priority-options">
+                        <legend>أولوية التنفيذ</legend>
+                        <div className="button-row">
+                          {(
+                            [
+                              ['normal', 'عادي'],
+                              ['urgent', 'مستعجل'],
+                            ] as const
+                          ).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={`button ${priority === value ? 'primary' : 'secondary'}`}
+                              aria-pressed={priority === value}
+                              onClick={() => {
+                                setPriority(value);
+                                setQuote(null);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="shop-field-note">
+                          المستعجل يعطي الأولوية للقرب عند ترشيح المندوب. لا يضمن موعدًا محددًا، ولا
+                          يضيف رسومًا في التجربة الحالية.
+                        </p>
+                      </fieldset>
                       <p className="shop-field-note">
                         اختيار النقد يسجل عهدة مالية تجريبية عند الاستلام. لا تُجرِ دفعًا حقيقيًا
                         خلال العرض.
@@ -1328,6 +1409,7 @@ export function Storefront() {
                   )}
                   {quote && (
                     <p className="shop-estimate">
+                      <span>{quote.quote.priority === 'urgent' ? 'مستعجل' : 'عادي'} · </span>
                       <ClockIcon />
                       {quote.quote.estimateLabel}
                     </p>
@@ -1410,6 +1492,14 @@ export function Storefront() {
               </button>
             </div>
           </section>
+        )}
+        {page === 'disputes' && (
+          <Disputes
+            key={disputePreset?.stamp ?? 'list'}
+            customer
+            target={disputeTarget}
+            preset={disputePreset ?? undefined}
+          />
         )}
         {page === 'orders' && (
           <>

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { assert, idempotent, transactionGate } from './domain.js';
+import { pickupOpening, type PickupSchedule } from '../shared/pickup-hours.js';
+import type { Transaction } from './db.js';
 import {
   districts,
   distanceKm,
@@ -14,11 +16,25 @@ export const coordinatesSchema = z
     longitude: z.number().finite().min(-180).max(180),
   })
   .strict();
-export const pickupOptionsSql = `SELECT s.id,s.name,s.address,s.latitude,s.longitude,COALESCE(r.count,0)::integer AS "ratingCount",r.rating FROM sites s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id WHERE s.archived_at IS NULL AND s.kind='pickup' AND s.pickup_enabled AND s.city='دمشق'`;
+export const pickupOptionsSql = `SELECT s.id,s.name,s.address,s.latitude,s.longitude,s.pickup_schedule AS "pickupSchedule",COALESCE(r.count,0)::integer AS "ratingCount",r.rating FROM sites s LEFT JOIN (SELECT subject_id,COUNT(*) count,ROUND(AVG(score)::numeric,1)::double precision rating FROM service_ratings WHERE kind='pickup' GROUP BY subject_id) r ON r.subject_id=s.id WHERE s.archived_at IS NULL AND s.kind='pickup' AND s.pickup_enabled AND s.city='دمشق'`;
+export async function pickupOptions(tx: Transaction, now: number, located = false) {
+  const rows = (
+    await tx.query<PickupOption & { pickupSchedule: PickupSchedule }>(
+      pickupOptionsSql +
+        (located ? ' AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL' : '') +
+        ' ORDER BY s.name,s.id',
+    )
+  ).rows;
+  return rows.map(({ pickupSchedule, ...p }) => ({
+    ...p,
+    openingStatus: pickupOpening(pickupSchedule, now),
+  }));
+}
 export function registerCustomerLocations(
   app: FastifyInstance,
   write: ReturnType<typeof transactionGate>,
   owner: (req: FastifyRequest) => string,
+  clock: () => number = Date.now,
 ) {
   const key = (req: FastifyRequest) =>
     z.string().min(8).max(128).parse(req.headers['idempotency-key']);
@@ -165,8 +181,7 @@ export function registerCustomerLocations(
         assert(saved, 404, 'ADDRESS_NOT_FOUND', 'العنوان غير موجود');
         point = saved;
       } else point = body;
-      const rows = (await tx.query<PickupOption>(pickupOptionsSql + ' AND s.latitude IS NOT NULL'))
-        .rows;
+      const rows = (await pickupOptions(tx, clock(), true)).filter((p) => p.openingStatus.openNow);
       return {
         sites: rows
           .map((p) => ({

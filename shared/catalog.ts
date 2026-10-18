@@ -69,7 +69,12 @@ export interface StoreCheckout {
   paymentMode: 'none' | 'cod';
   id: string;
   fulfillmentOrigin: { id: string; name: string };
-  quote: { feeMinor: number; expiresAt: string; estimateLabel: string };
+  quote: {
+    priority: 'normal' | 'urgent';
+    feeMinor: number;
+    expiresAt: string;
+    estimateLabel: string;
+  };
   subtotalMinor: number;
   items: CartItem[];
 }

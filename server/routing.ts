@@ -127,7 +127,7 @@ export class DispatchRouting {
           .length(points.length)
           .parse(
             await Promise.race([
-            operation,
+              operation,
               new Promise<never>((_, reject) => {
                 timer = setTimeout(() => reject(new Error('Routing timeout')), 3000);
               }),

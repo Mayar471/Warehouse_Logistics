@@ -46,7 +46,39 @@ export function financialPayload(url: string, body: string): Record<string, unkn
   )
     throw new Error('INVALID_FINANCIAL_COMMAND');
   let allowed: string[];
-  if (url === '/api/payouts') {
+  if (
+    url === '/api/partner-funding' ||
+    url === '/api/partner-payments' ||
+    /^\/api\/partner-payments\/[0-9a-f-]+\/actions$/.test(url)
+  ) {
+    if (url === '/api/partner-funding') {
+      if (!positiveMoney(p.amountMinor) || p.currency !== 'SYP')
+        throw new Error('INVALID_FINANCIAL_COMMAND');
+      allowed = ['reference', 'reason', 'amountMinor', 'currency'];
+    } else if (url === '/api/partner-payments') {
+      if (typeof p.shipmentId !== 'string' || !uuid.test(p.shipmentId))
+        throw new Error('INVALID_FINANCIAL_COMMAND');
+      allowed = ['reference', 'reason', 'shipmentId'];
+    } else {
+      if (
+        !positive(p.expectedVersion) ||
+        ![
+          'release',
+          'confirm',
+          'cancel',
+          'report_issue',
+          'request_return',
+          'receive_return',
+          'request_recovery',
+          'receive_recovery',
+        ].includes(String(p.action)) ||
+        !positiveMoney(p.amountMinor, true) ||
+        p.currency !== 'SYP'
+      )
+        throw new Error('INVALID_FINANCIAL_COMMAND');
+      allowed = ['reference', 'reason', 'action', 'expectedVersion', 'amountMinor', 'currency'];
+    }
+  } else if (url === '/api/payouts') {
     if (
       typeof p.shipmentId !== 'string' ||
       !uuid.test(p.shipmentId) ||
@@ -93,6 +125,10 @@ export function financialPayload(url: string, body: string): Record<string, unkn
   return { ...p, reference: p.reference.trim(), reason: p.reason.trim() };
 }
 export function financialScope(actorId: string, url: string) {
+  if (url === '/api/partner-funding') return `${actorId}:partner:funding`;
+  if (url === '/api/partner-payments') return `${actorId}:partner:create`;
+  const partner = /^\/api\/partner-payments\/([^/]+)\/actions$/.exec(url);
+  if (partner && uuid.test(partner[1])) return `${actorId}:partner:${partner[1]}`;
   if (url === '/api/payouts') return `${actorId}:payout:create`;
   const match = /^\/api\/(cash|payouts|refunds)\/([^/]+)\/actions$/.exec(url);
   if (!match || !uuid.test(match[2])) throw new Error('INVALID_FINANCIAL_COMMAND');
@@ -119,4 +155,9 @@ export function decodeFinancialCommand(raw: string, actorId: string): FinancialC
 }
 function positiveTime(v: unknown) {
   return typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+}
+function positiveMoney(v: unknown, zero = false) {
+  return (
+    typeof v === 'number' && Number.isSafeInteger(v) && v >= (zero ? 0 : 1) && v <= 1000000000000
+  );
 }
