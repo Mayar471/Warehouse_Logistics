@@ -104,10 +104,22 @@ if (hosted || process.env.SERVE_WEB === 'true') {
   });
 }
 await app.listen({ host, port });
-const timer = setInterval(() => {
-  void flushOutbox().catch(() => app.log.error('Outbox worker failed'));
-  void sweepAssignments().catch(() => app.log.error('Assignment worker failed'));
-}, 2000);
+let workerRunning = false;
+const timer = setInterval(
+  () => {
+    if (workerRunning) return;
+    workerRunning = true;
+    void (async () => {
+      try {
+        await flushOutbox().catch(() => app.log.error('Outbox worker failed'));
+        await sweepAssignments().catch(() => app.log.error('Assignment worker failed'));
+      } finally {
+        workerRunning = false;
+      }
+    })();
+  },
+  hosted ? 5000 : 2000,
+);
 timer.unref();
 let closing = false;
 async function stop() {
