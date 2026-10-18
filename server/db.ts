@@ -39,6 +39,7 @@ export interface ShipmentRow {
   created_at: string;
   updated_at: string;
 }
+
 export const demoAccounts: {
   id: string;
   name: string;
@@ -221,19 +222,17 @@ const schemaSQL = `
   ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS transfer_id uuid REFERENCES inventory_transfers(id);
   CREATE INDEX IF NOT EXISTS transfer_movement_history ON inventory_movements(transfer_id,product_id) WHERE transfer_id IS NOT NULL;
   INSERT INTO schema_migrations(version) VALUES(9) ON CONFLICT DO NOTHING;
-  DO $$ BEGIN
-    IF NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=10) THEN
-      ALTER TABLE inventory_transfers DROP CONSTRAINT inventory_transfers_status_check;
-      ALTER TABLE inventory_transfers ADD CONSTRAINT inventory_transfers_status_check CHECK(status IN ('reserved','assigned','accepted','released','in_transit','received','resolved','cancelled'));
-      ALTER TABLE inventory_transfer_lines ADD COLUMN lost integer NOT NULL DEFAULT 0;
-      ALTER TABLE inventory_transfer_lines ADD COLUMN damaged integer NOT NULL DEFAULT 0;
-      ALTER TABLE inventory_transfer_lines ADD COLUMN restocked integer NOT NULL DEFAULT 0;
-      ALTER TABLE inventory_transfer_lines ADD COLUMN discarded integer NOT NULL DEFAULT 0;
-      ALTER TABLE inventory_transfer_lines ADD CONSTRAINT transfer_resolution_quantities CHECK(lost>=0 AND received+lost<=quantity AND damaged>=0 AND damaged<=received AND restocked>=0 AND discarded>=0 AND restocked+discarded<=damaged);
-      CREATE INDEX transfer_damage_pending ON inventory_transfer_lines(merchant_id,destination_id,product_id) WHERE damaged>restocked+discarded;
-      INSERT INTO schema_migrations(version) VALUES(10);
-    END IF;
-  END $$;
+  DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM schema_migrations WHERE version=10) THEN
+    ALTER TABLE inventory_transfers DROP CONSTRAINT inventory_transfers_status_check;
+    ALTER TABLE inventory_transfers ADD CONSTRAINT inventory_transfers_status_check CHECK(status IN ('reserved','assigned','accepted','released','in_transit','received','resolved','cancelled'));
+    ALTER TABLE inventory_transfer_lines ADD COLUMN lost integer NOT NULL DEFAULT 0;
+    ALTER TABLE inventory_transfer_lines ADD COLUMN damaged integer NOT NULL DEFAULT 0;
+    ALTER TABLE inventory_transfer_lines ADD COLUMN restocked integer NOT NULL DEFAULT 0;
+    ALTER TABLE inventory_transfer_lines ADD COLUMN discarded integer NOT NULL DEFAULT 0;
+    ALTER TABLE inventory_transfer_lines ADD CONSTRAINT transfer_resolution_quantities CHECK(lost>=0 AND received+lost<=quantity AND damaged>=0 AND damaged<=received AND restocked>=0 AND discarded>=0 AND restocked+discarded<=damaged);
+    CREATE INDEX transfer_damage_pending ON inventory_transfer_lines(merchant_id,destination_id,product_id) WHERE damaged>restocked+discarded;
+    INSERT INTO schema_migrations(version) VALUES(10);
+  END IF; END $$;
   INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING;
   CREATE TABLE IF NOT EXISTS location_sharing(shipment_id uuid PRIMARY KEY REFERENCES shipments(id),session_id uuid NOT NULL,courier_id text NOT NULL REFERENCES couriers(id),active boolean NOT NULL,customer_allowed boolean NOT NULL,expires_at timestamptz NOT NULL,sequence integer NOT NULL DEFAULT 0,latitude double precision,longitude double precision,accuracy double precision,measured_at timestamptz,received_at timestamptz,fingerprint text,
     CHECK(sequence>=0),CHECK(latitude BETWEEN -85 AND 85),CHECK(longitude BETWEEN -180 AND 180),CHECK(accuracy BETWEEN 0 AND 5000),CHECK((latitude IS NULL AND longitude IS NULL AND accuracy IS NULL AND measured_at IS NULL AND received_at IS NULL AND fingerprint IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL AND accuracy IS NOT NULL AND measured_at IS NOT NULL AND received_at IS NOT NULL AND fingerprint IS NOT NULL)));
@@ -328,173 +327,34 @@ const schemaSQL = `
       IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='dispute_participants_immutable') THEN CREATE TRIGGER dispute_participants_immutable BEFORE UPDATE OR DELETE ON dispute_participants FOR EACH ROW EXECUTE FUNCTION protect_service_rating(); END IF;
     END $$;
     INSERT INTO schema_migrations(version) VALUES(29) ON CONFLICT DO NOTHING;
-  END $$;
+  END IF; END $$;
   INSERT INTO schema_migrations(version) VALUES(30) ON CONFLICT DO NOTHING;
   ALTER TABLE shipments ADD COLUMN IF NOT EXISTS priority text NOT NULL DEFAULT 'normal' CHECK(priority IN ('normal','urgent'));
   CREATE TABLE IF NOT EXISTS dispatch_locations(
     courier_id text PRIMARY KEY REFERENCES couriers(id),
-    latitude double precision NOT NULL CHECK(latitude BETWEEN -85 AND 85),
-    longitude double precision NOT NULL CHECK(longitude BETWEEN -180 AND 180),
-    accuracy double precision NOT NULL CHECK(accuracy BETWEEN 0 AND 200),
-    measured_at timestamptz NOT NULL,received_at timestamptz NOT NULL);
-  CREATE INDEX IF NOT EXISTS dispatch_location_expiry ON dispatch_locations(measured_at);
-  INSERT INTO schema_migrations(version) VALUES(31) ON CONFLICT DO NOTHING;
-  ALTER TABLE dispatch_locations ADD COLUMN IF NOT EXISTS h3_cell text;
-  CREATE INDEX IF NOT EXISTS dispatch_h3_cell ON dispatch_locations(h3_cell);
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    accuracy double precision,
+    updated_at timestamptz NOT NULL
+  );
 `;
 
-async function seed(db: any) {
-  const initialized = await db.query<{ id: string }>('SELECT id FROM merchants LIMIT 1');
-  if (initialized.rows.length) return;
-  await db.transaction(async (tx: any) => {
-    await tx.query("INSERT INTO merchants VALUES ('merchant-a','بيت الشام'),('merchant-b','نواة')");
-    await tx.query(`INSERT INTO sites(id,name,city,address,kind,merchant_id) VALUES
-      ('site-a','متجر بيت الشام','دمشق','شارع العابد، دمشق','store','merchant-a'),
-      ('site-b','متجر نواة','دمشق','المزة، دمشق','store','merchant-b'),
-      ('hub-a','مركز التجميع الرئيسي','دمشق','كفرسوسة، دمشق','hub',NULL),
-      ('pickup-a','نقطة استلام الروضة','دمشق','الروضة، دمشق','pickup',NULL)`);
-    await tx.query(`INSERT INTO couriers(id,name,vehicle,capacity_kg,available) VALUES
-      ('courier-a','أحمد منصور','دراجة نارية',12,true),
-      ('courier-b','لينا الخطيب','سيارة صغيرة',50,true),
-      ('courier-c','سامر الحسن','سيارة نقل',100,false)`);
-    const examples = [
-      ['merchant-a', 'site-a', 'رامي الشامي', 'المالكي، دمشق', 2.5, 'ready', null],
-      ['merchant-a', 'site-a', 'نور أحمد', 'أبو رمانة، دمشق', 1.2, 'in_transit', 'courier-a'],
-      ['merchant-b', 'site-b', 'هالة محمد', 'المزة، دمشق', 3.0, 'assigned', 'courier-b'],
-      ['merchant-a', 'site-a', 'يوسف علي', 'الروضة، دمشق', 0.8, 'delivered', 'courier-b'],
-      ['merchant-b', 'site-b', 'سارة خالد', 'كفرسوسة، دمشق', 4.0, 'failed', 'courier-b'],
-      ['merchant-a', 'site-a', 'عمر حسن', 'الصالحية، دمشق', 1.5, 'ready', null],
-    ] as const;
-    for (const [i, row] of examples.entries()) {
-      const id = randomUUID();
-      const created = new Date(Date.now() - (i + 1) * 45 * 60_000).toISOString();
-      await tx.query(
-        `INSERT INTO shipments(id,reference,application_id,external_reference,merchant_id,recipient_name,destination,origin_id,
-        weight_kg,status,courier_id,assignment_accepted,fee_minor,currency,tracking_token,created_at,updated_at)
-        VALUES($1,$2,'demo-commerce',$3,$4,$5,$6,$7,$8,$9,$10,$11,3500000,'SYP',$12,$13,$13)`,
-        [
-          id,
-          `SHP-${String(1001 + i)}`,
-          `DEMO-${i + 1}`,
-          row[0],
-          row[2],
-          row[3],
-          row[1],
-          row[4],
-          row[5],
-          row[6],
-          row[5] !== 'ready',
-          randomUUID(),
-          created,
-        ],
-      );
-      await tx.query('INSERT INTO timeline VALUES($1,$2,$3,$4,$5,$6)', [
-        randomUUID(),
-        id,
-        'seeded',
-        'تحميل حالة ابتدائية للعرض؛ ليست سجل تنفيذ فعلي',
-        'بيانات العرض',
-        created,
-      ]);
-    }
+// دالة الاتصال وفتح القاعدة وتنفيذ schemaSQL ككتلة واحدة صحيحة
+export async function openDatabase() {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
   });
-}
 
-export async function openDatabase(pathOrUrl?: string) {
-  // If it looks like a PostgreSQL connection URL, use pg
-  if (pathOrUrl?.startsWith('postgres://') || pathOrUrl?.startsWith('postgresql://')) {
-    const pool = new Pool({ connectionString: pathOrUrl });
-    const client = await pool.connect();
-    // Create a PGlite-compatible interface for pg
-    const db = {
-      query: async (text: string, params?: any[]) => {
-        const result = await client.query(text, params);
-        return { rows: result.rows };
-      },
-      exec: async (text: string) => {
-        await client.query(text);
-      },
-      transaction: async (fn: (tx: any) => Promise<void>) => {
-        await client.query('BEGIN');
-        try {
-          const tx = {
-            query: async (text: string, params?: any[]) => {
-              const result = await client.query(text, params);
-              return { rows: result.rows };
-            },
-          };
-          await fn(tx);
-          await client.query('COMMIT');
-        } catch (e) {
-          await client.query('ROLLBACK');
-          throw e;
-        }
-      },
-      close: async () => {
-        client.release();
-        await pool.end();
-      },
-    } as any;
-    await db.exec(schemaSQL);
-    const unindexed = (
-      await db.query<{ courier_id: string; latitude: number; longitude: number }>(
-        'SELECT courier_id,latitude,longitude FROM dispatch_locations WHERE h3_cell IS NULL',
-      )
-    ).rows;
-    if (unindexed.length)
-      await db.query(
-        'UPDATE dispatch_locations l SET h3_cell=x.cell FROM unnest($1::text[],$2::text[]) AS x(id,cell) WHERE l.courier_id=x.id',
-        [unindexed.map((p) => p.courier_id), unindexed.map(dispatchCell)],
-      );
-    await seed(db);
-    await db.transaction(async (tx) => {
-      for (const product of catalog) {
-        const inserted = await tx.query(
-          "INSERT INTO inventory_stock(merchant_id,site_id,product_id,on_hand) VALUES('merchant-a','site-a',$1,30) ON CONFLICT DO NOTHING RETURNING product_id",
-          [product.id],
-        );
-        if (inserted.rows.length)
-          await tx.query(
-            "INSERT INTO inventory_movements(id,merchant_id,site_id,product_id,kind,quantity,actor_name,reason) VALUES($1,'merchant-a','site-a',$2,'opening',30,'بيانات العرض','رصيد افتتاحي اصطناعي؛ لا يمثل جردًا تاريخيًا')",
-            [randomUUID(), product.id],
-          );
-      }
-    });
-    await db.query(
-      "UPDATE shipments SET assignment_expires_at=now()+interval '5 minutes' WHERE status='assigned' AND NOT assignment_accepted AND assignment_expires_at IS NULL",
-    );
-    return db;
+  const client = await pool.connect();
+  try {
+    console.log("Opening database and executing schema...");
+    // تنفيذ السكربت كاملاً كدفعة واحدة لتجنب أخطاء التقسيم مع الـ DO blocks
+    await client.query(schemaSQL);
+    console.log("Database schema initialized successfully.");
+  } finally {
+    client.release();
   }
-  // Use PGlite for local development
-  const db = new PGlite(pathOrUrl);
-  await db.waitReady;
-  await db.exec(schemaSQL);
-  const unindexed = (
-    await db.query<{ courier_id: string; latitude: number; longitude: number }>(
-      'SELECT courier_id,latitude,longitude FROM dispatch_locations WHERE h3_cell IS NULL',
-    )
-  ).rows;
-  if (unindexed.length)
-    await db.query(
-      'UPDATE dispatch_locations l SET h3_cell=x.cell FROM unnest($1::text[],$2::text[]) AS x(id,cell) WHERE l.courier_id=x.id',
-      [unindexed.map((p) => p.courier_id), unindexed.map(dispatchCell)],
-    );
-  await seed(db);
-  await db.transaction(async (tx) => {
-    for (const product of catalog) {
-      const inserted = await tx.query(
-        "INSERT INTO inventory_stock(merchant_id,site_id,product_id,on_hand) VALUES('merchant-a','site-a',$1,30) ON CONFLICT DO NOTHING RETURNING product_id",
-        [product.id],
-      );
-      if (inserted.rows.length)
-        await tx.query(
-          "INSERT INTO inventory_movements(id,merchant_id,site_id,product_id,kind,quantity,actor_name,reason) VALUES($1,'merchant-a','site-a',$2,'opening',30,'بيانات العرض','رصيد افتتاحي اصطناعي؛ لا يمثل جردًا تاريخيًا')",
-          [randomUUID(), product.id],
-        );
-    }
-  });
-  await db.query(
-    "UPDATE shipments SET assignment_expires_at=now()+interval '5 minutes' WHERE status='assigned' AND NOT assignment_accepted AND assignment_expires_at IS NULL",
-  );
-  return db;
+
+  return pool;
 }
