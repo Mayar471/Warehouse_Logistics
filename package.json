@@ -17,8 +17,7 @@
     "test": "node --no-wasm-tier-up --no-wasm-code-gc --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "start": "tsx server/main.ts",
     "demo": "tsx scripts/preview.ts",
-    "check": "npm run typecheck && npm test && npm run build",
-    "postinstall": "npm run build"
+    "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
