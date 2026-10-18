@@ -12,6 +12,13 @@ const host = process.env.HOST ?? (isProduction ? '0.0.0.0' : '127.0.0.1');
 const port = Number(process.env.PORT ?? 3001);
 
 console.log(`Starting in ${isProduction ? 'production' : 'development'} mode on ${host}:${port}`);
+console.log('Environment check:');
+console.log(`- NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`- HOST: ${process.env.HOST}`);
+console.log(`- PORT: ${process.env.PORT}`);
+console.log(`- APP_MODE: ${process.env.APP_MODE}`);
+console.log(`- SERVE_WEB: ${process.env.SERVE_WEB}`);
+console.log(`- DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
 
 // For production deployment, use environment variables for secrets
 let secrets: { applicationKey: string; webhookKey: string };
@@ -38,8 +45,11 @@ if (isProduction) {
 // Use external PostgreSQL in production, embedded PGlite for local demo
 const dbUrl = isProduction ? process.env.DATABASE_URL : (process.env.DATA_DIR ?? '.local/postgres');
 console.log(`Database URL present: ${!!dbUrl}`);
+console.log('Opening database...');
 const db = await openDatabase(dbUrl);
+console.log('Database opened successfully');
 try {
+  console.log('Building app...');
   const { app, flushOutbox, sweepAssignments } = buildApp(db, {
     ...secrets,
     demoMode: appMode === 'demo',
@@ -52,7 +62,10 @@ try {
       ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
       : [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
   });
+  console.log('App built successfully');
+
   if (process.env.SERVE_WEB === 'true') {
+    console.log('Registering static files...');
     await app.register(staticFiles, {
       root: resolve('dist'),
       index: 'index.html',
@@ -62,18 +75,26 @@ try {
       if (req.url.startsWith('/api/')) return reply.code(404).send({ message: 'المسار غير موجود' });
       return reply.sendFile('index.html');
     });
+    console.log('Static files registered');
   }
+
+  console.log(`Starting server on ${host}:${port}...`);
   await app.listen({ host, port });
   console.log(`Server listening on ${host}:${port}`);
+
+  console.log('Starting background workers...');
   const timer = setInterval(() => {
     void flushOutbox().catch((error) => app.log.error({ err: error }, 'Outbox worker failed'));
     void sweepAssignments().catch(() => app.log.error('Assignment worker failed'));
   }, 2000);
   timer.unref();
+  console.log('Background workers started');
+
   let closing = false;
   async function stop() {
     if (closing) return;
     closing = true;
+    console.log('Shutting down...');
     clearInterval(timer);
     await app.close();
     await db.close();
@@ -83,5 +104,6 @@ try {
   process.on('SIGTERM', () => void stop());
 } catch (error) {
   console.error('Failed to start server:', error);
+  console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
   process.exit(1);
 }
