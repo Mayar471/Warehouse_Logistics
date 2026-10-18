@@ -4,33 +4,48 @@ import { resolve } from 'node:path';
 import { openDatabase } from './db.js';
 import { buildApp } from './app.js';
 import staticFiles from '@fastify/static';
+import { osrmProvider } from './routing.js';
 
-const host = process.env.HOST ?? '127.0.0.1';
-if (host !== '127.0.0.1')
-  throw new Error(
-    'The demonstration server must bind to 127.0.0.1. Production authentication is not implemented.',
-  );
-if ((process.env.APP_MODE ?? 'demo') !== 'demo')
-  throw new Error('Only isolated demo mode is available in this slice.');
+const isProduction = process.env.NODE_ENV === 'production';
+const appMode = process.env.APP_MODE ?? 'demo';
+const host = process.env.HOST ?? (isProduction ? '0.0.0.0' : '127.0.0.1');
 const port = Number(process.env.PORT ?? 3001);
-await mkdir('.local', { recursive: true });
+
+// For production deployment, use environment variables for secrets
 let secrets: { applicationKey: string; webhookKey: string };
-try {
-  secrets = JSON.parse(await readFile('.local/secrets.json', 'utf8'));
-} catch {
+if (isProduction) {
   secrets = {
-    applicationKey: randomBytes(32).toString('hex'),
-    webhookKey: randomBytes(32).toString('hex'),
+    applicationKey: process.env.APPLICATION_KEY || randomBytes(32).toString('hex'),
+    webhookKey: process.env.WEBHOOK_KEY || randomBytes(32).toString('hex'),
   };
-  await writeFile('.local/secrets.json', JSON.stringify(secrets), { mode: 0o600 });
+} else {
+  await mkdir('.local', { recursive: true });
+  try {
+    secrets = JSON.parse(await readFile('.local/secrets.json', 'utf8'));
+  } catch {
+    secrets = {
+      applicationKey: randomBytes(32).toString('hex'),
+      webhookKey: randomBytes(32).toString('hex'),
+    };
+    await writeFile('.local/secrets.json', JSON.stringify(secrets), { mode: 0o600 });
+  }
 }
-const db = await openDatabase(process.env.DATA_DIR ?? '.local/postgres');
+
+// Use external PostgreSQL in production, embedded PGlite for local demo
+const db = await openDatabase(
+  isProduction ? process.env.DATABASE_URL : (process.env.DATA_DIR ?? '.local/postgres')
+);
 const { app, flushOutbox, sweepAssignments } = buildApp(db, {
   ...secrets,
-  demoMode: true,
+  demoMode: appMode === 'demo',
+  routingProvider: process.env.OSRM_BASE_URL
+    ? osrmProvider(process.env.OSRM_BASE_URL, process.env.OSRM_PROVIDER_NAME ?? 'OSRM driving')
+    : undefined,
   logger: true,
-  receiverUrl: `http://127.0.0.1:${port}/api/demo-commerce/webhook`,
-  allowedOrigins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
+  receiverUrl: process.env.RECEIVER_URL || `http://127.0.0.1:${port}/api/demo-commerce/webhook`,
+  allowedOrigins: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+    : [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
 });
 if (process.env.SERVE_WEB === 'true') {
   await app.register(staticFiles, {
