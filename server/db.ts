@@ -4,7 +4,8 @@ import { catalog } from '../shared/catalog.js';
 import { dispatchCell } from './spatial-index.js';
 import type { Role, ShipmentStatus } from '../shared/contracts.js';
 
-export type Transaction = Pick<PGlite, 'query'>;
+import type { Database } from './database.js';
+export type { Transaction } from './database.js';
 export interface ShipmentRow {
   priority: 'normal' | 'urgent';
   origin_handover_required: boolean;
@@ -85,6 +86,12 @@ export const demoAccounts: {
 export async function openDatabase(path?: string) {
   const db = new PGlite(path);
   await db.waitReady;
+  await initializeDatabase(db);
+  return db;
+}
+
+/** Apply the identical schema and synthetic demo seed to either engine. */
+export async function initializeDatabase(db: Database) {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS merchants (id text PRIMARY KEY, name text NOT NULL);
@@ -614,7 +621,7 @@ export async function openDatabase(path?: string) {
   return db;
 }
 
-async function seed(db: PGlite) {
+async function seed(db: Database) {
   const initialized = await db.query<{ id: string }>('SELECT id FROM merchants LIMIT 1');
   if (initialized.rows.length) return;
   await db.transaction(async (tx) => {

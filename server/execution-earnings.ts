@@ -1,10 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import type { Account } from '../shared/contracts.js';
 import { assert } from './domain.js';
 export function registerExecutionEarnings(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   account: (req: FastifyRequest) => Account,
 ) {
   app.get('/api/execution-earnings', async (req) => {

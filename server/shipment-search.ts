@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import type { Account } from '../shared/contracts.js';
 import { statusLabels } from '../shared/contracts.js';
 import { activeShipmentStatuses } from '../shared/shipment-filters.js';
@@ -8,7 +8,7 @@ import { mapShipment } from './domain.js';
 import type { ShipmentRow } from './db.js';
 export function registerShipmentSearch(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   account: (req: FastifyRequest) => Account,
 ) {
   app.get('/api/shipments', async (req) => {

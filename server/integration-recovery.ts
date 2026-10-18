@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import { assert, idempotent, loadShipment, transactionGate } from './domain.js';
 
 export function registerRecovery(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   write: ReturnType<typeof transactionGate>,
   operator: (req: FastifyRequest) => Account,
 ) {

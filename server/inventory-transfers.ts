@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
@@ -200,7 +200,7 @@ export async function expireTransfers(tx: Transaction, now: number) {
 }
 export function registerTransfers(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   write: ReturnType<typeof transactionGate>,
   account: (req: FastifyRequest) => Account,
   clock: () => number,

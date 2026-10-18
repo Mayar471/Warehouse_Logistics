@@ -24,7 +24,8 @@ import { registerRecovery } from './integration-recovery.js';
 import { needsProof, verifyProof } from './delivery-proof.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
+import { registerHostedDemo, type HostedDemo } from './hosted-demo.js';
 import type { Account, Action, Courier } from '../shared/contracts.js';
 import { demoAccounts, type ShipmentRow } from './db.js';
 import {
@@ -109,11 +110,12 @@ function equal(a: string, b: string) {
 }
 
 export function buildApp(
-  db: PGlite,
+  db: Database,
   options: {
     applicationKey: string;
     webhookKey: string;
     demoMode: boolean;
+    hostedDemo?: HostedDemo;
     logger?: boolean;
     clock?: () => number;
     routingProvider?: RoutingProvider;
@@ -133,13 +135,18 @@ export function buildApp(
                 .replace(/\/api\/tracking\/[^/]+/, '/api/tracking/[redacted]'),
             }),
           },
-          redact: ['req.headers.authorization', 'req.headers.cookie'],
+          redact: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers.x-demo-internal',
+          ],
         }
       : false,
     bodyLimit: 16_384,
     requestTimeout: 15_000,
   });
   app.register(cookie);
+  if (options.hostedDemo) registerHostedDemo(app, options.hostedDemo);
   const write = transactionGate(db);
   const clock = options.clock ?? Date.now;
   const sweepAssignments = () =>
@@ -157,6 +164,7 @@ export function buildApp(
   const limits = new Map<string, { count: number; until: number }>();
   let flushing = false;
   const allowedOrigins = new Set([
+    ...(options.hostedDemo ? [options.hostedDemo.origin] : []),
     'http://127.0.0.1:5173',
     'http://localhost:5173',
     'http://127.0.0.1:3001',
@@ -296,12 +304,15 @@ export function buildApp(
     );
   }
 
-  app.get('/api/health', async () => ({
-    status: 'ok',
-    mode: 'demo',
-    database: 'embedded-postgresql',
-    slice: 'local-parcel',
-  }));
+  app.get('/api/health', async () => {
+    await db.query('SELECT 1');
+    return {
+      status: 'ok',
+      mode: 'demo',
+      database: options.hostedDemo ? 'postgresql' : 'embedded-postgresql',
+      slice: 'local-parcel',
+    };
+  });
   registerStorefront(app, db, options, write);
   registerLocation(app, write, account, clock);
   registerCash(app, write, account, clock);
@@ -406,7 +417,11 @@ export function buildApp(
     assert(options.demoMode, 404, 'NOT_FOUND', 'غير متاح');
     const host = String(req.headers.host ?? '').split(':')[0];
     assert(
-      ['localhost', '127.0.0.1'].includes(host),
+      [
+        'localhost',
+        '127.0.0.1',
+        ...(options.hostedDemo ? [new URL(options.hostedDemo.origin).hostname] : []),
+      ].includes(host),
       403,
       'HOST_REJECTED',
       'حسابات العرض متاحة عبر المضيف المحلي فقط',
@@ -426,6 +441,7 @@ export function buildApp(
     reply.setCookie('session', token, {
       path: '/',
       httpOnly: true,
+      secure: Boolean(options.hostedDemo),
       sameSite: 'strict',
       maxAge: 8 * 60 * 60,
     });
@@ -683,6 +699,7 @@ export function buildApp(
       method: 'POST',
       url: '/api/v1/quotes',
       headers: {
+        ...(options.hostedDemo ? { 'x-demo-internal': options.applicationKey } : {}),
         authorization: 'Bearer ' + options.applicationKey,
         'x-merchant-id': body.merchantId,
       },
@@ -699,6 +716,7 @@ export function buildApp(
       method: 'POST',
       url: '/api/v1/fulfillments',
       headers: {
+        ...(options.hostedDemo ? { 'x-demo-internal': options.applicationKey } : {}),
         authorization: 'Bearer ' + options.applicationKey,
         'x-merchant-id': body.merchantId,
         'idempotency-key': key,

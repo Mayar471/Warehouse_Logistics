@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
 import { assert, idempotent, transactionGate, loadShipment, appendEvent } from './domain.js';
@@ -10,7 +10,7 @@ import { catalog } from '../shared/catalog.js';
 
 export function registerInventory(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   write: ReturnType<typeof transactionGate>,
   account: (req: FastifyRequest) => Account,
 ) {

@@ -9,7 +9,8 @@ import {
 import { commercialReturnSelect, returnEvent } from './commercial-returns.js';
 import type { CommercialReturn } from '../shared/commercial-returns.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
+import type { HostedDemo } from './hosted-demo.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { catalog, type StoreCheckout } from '../shared/catalog.js';
@@ -27,18 +28,29 @@ import {
 
 export function registerStorefront(
   app: FastifyInstance,
-  db: PGlite,
-  options: { demoMode: boolean; applicationKey: string; webhookKey: string; clock?: () => number },
+  db: Database,
+  options: {
+    demoMode: boolean;
+    applicationKey: string;
+    webhookKey: string;
+    clock?: () => number;
+    hostedDemo?: HostedDemo;
+  },
   write: ReturnType<typeof transactionGate>,
 ) {
   const headers = {
+    ...(options.hostedDemo ? { 'x-demo-internal': options.applicationKey } : {}),
     authorization: 'Bearer ' + options.applicationKey,
     'x-merchant-id': 'merchant-a',
   };
   function guard(req: FastifyRequest) {
     assert(options.demoMode, 404, 'NOT_FOUND', 'غير متاح');
     assert(
-      ['localhost', '127.0.0.1'].includes(String(req.headers.host ?? '').split(':')[0]),
+      [
+        'localhost',
+        '127.0.0.1',
+        ...(options.hostedDemo ? [new URL(options.hostedDemo.origin).hostname] : []),
+      ].includes(String(req.headers.host ?? '').split(':')[0]),
       403,
       'HOST_REJECTED',
       'المتجر التجريبي محلي فقط',
@@ -77,6 +89,7 @@ export function registerStorefront(
     if (!req.cookies.shop || !/^[a-f0-9]{64}$/.test(req.cookies.shop))
       reply.setCookie('shop', randomBytes(32).toString('hex'), {
         httpOnly: true,
+        secure: Boolean(options.hostedDemo),
         sameSite: 'strict',
         path: '/',
         maxAge: 60 * 60 * 24 * 7,

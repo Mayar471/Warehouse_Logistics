@@ -1,6 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import type { Account } from '../shared/contracts.js';
 import { z } from 'zod';
 import { assert, idempotent, transactionGate, courierCapacity } from './domain.js';
@@ -8,7 +8,7 @@ import { coordinatesSchema } from './customer-locations.js';
 
 export function registerDeliveryPartners(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   write: ReturnType<typeof transactionGate>,
   operator: (req: FastifyRequest) => Account,
 ) {

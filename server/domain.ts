@@ -4,7 +4,7 @@ import { reserveCheckout, inventoryTransition } from './inventory.js';
 import { collection, collectCash } from './cash-ledger.js';
 import { requirePickupOpen } from './pickup-hours.js';
 import type { CashConfirmation } from '../shared/cash.js';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import type {
   Account,
   Action,
@@ -920,7 +920,7 @@ export async function expireAssignments(tx: Transaction, now: number) {
 
 // PGlite serializes local transactions; this gate also keeps compound writes and workers ordered.
 // A server PostgreSQL deployment requires row locks/conditional updates, not this process-local gate.
-export function transactionGate(db: PGlite) {
+export function transactionGate(db: Database) {
   let tail: Promise<unknown> = Promise.resolve();
   return <T>(fn: (tx: Transaction) => Promise<T>): Promise<T> => {
     const result = tail.then(() => db.transaction(fn));

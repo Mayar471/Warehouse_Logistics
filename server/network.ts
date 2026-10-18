@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Database } from './database.js';
 import { z } from 'zod';
 import type { Account } from '../shared/contracts.js';
 import { assert, idempotent, transactionGate } from './domain.js';
@@ -10,7 +10,7 @@ import { registerPartnerRemoval } from './partner-removal.js';
 
 export function registerNetwork(
   app: FastifyInstance,
-  db: PGlite,
+  db: Database,
   write: ReturnType<typeof transactionGate>,
   operator: (req: FastifyRequest) => Account,
   onRemoved: (kind: string, id: string, merchantId: string | null) => void,
