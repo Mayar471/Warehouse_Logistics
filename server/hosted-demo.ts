@@ -54,7 +54,9 @@ export function registerHostedDemo(app: FastifyInstance, settings: HostedDemo) {
     return reply.redirect('/demo-access');
   });
   app.get('/demo-access', async (_req, reply) =>
-    reply.type('text/html; charset=utf-8').send(loginPage),
+    // no-referrer makes native HTML form POSTs send Origin:null. Retain same-site
+    // referrers on this page only; nothing is disclosed to another origin.
+    reply.header('Referrer-Policy', 'same-origin').type('text/html; charset=utf-8').send(loginPage),
   );
   app.post('/demo-access', async (req, reply) => {
     if (req.headers.origin !== settings.origin) return reply.code(403).send('مصدر الطلب غير مقبول');
@@ -70,6 +72,7 @@ export function registerHostedDemo(app: FastifyInstance, settings: HostedDemo) {
     if (typeof password !== 'string' || !equal(password, settings.password))
       return reply
         .code(401)
+        .header('Referrer-Policy', 'same-origin')
         .type('text/html; charset=utf-8')
         .send(loginPage.replace('<form ', '<p role="alert">رمز الدخول غير صحيح</p><form '));
     attempts.delete(key);

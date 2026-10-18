@@ -15,6 +15,7 @@ test('hosted demo blocks anonymous APIs, validates access origin and password, a
     hostedDemo: { origin, password, signingKey },
   });
   try {
+    assert.equal((await app.inject('/demo-access')).headers['referrer-policy'], 'same-origin');
     assert.equal((await app.inject('/api/health')).statusCode, 200);
     assert.equal((await app.inject('/shop')).headers.location, '/demo-access');
     assert.equal((await app.inject('/api/demo/accounts')).statusCode, 401);
